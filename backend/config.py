@@ -7,7 +7,7 @@ import os
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 LLM_PARAMS = {
-    "temperature": 0.1,
+    "temperature": 0.0,
     "max_tokens": 300
 }
 
