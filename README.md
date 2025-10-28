@@ -1,3 +1,4 @@
 # Group14
 prompt_real是要apikey的，mock是模拟ai回答，可以先测试模拟运行。
 fastapi对接顺利，需要付费账户的apikey
+新上传tenantchatbot_sprint2_LLM的是根据老师langchain的代码改的，思路应该更全。
