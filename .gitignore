@@ -8,6 +8,9 @@ venv/
 .env/
 .venv/
 
+# Chroma / vector store
+backend/vector_store/
+
 # VSCode
 .vscode/
 
