@@ -2,19 +2,15 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 import traceback
-import os
 
 # ==============================
-# 引入 TenantChatbot
+# 直接导入 llm.py 中已经初始化好的 chatbot 实例
 # ==============================
-
 try:
-    from backend.llm import TenantChatbot, ensure_vector_store
-    from langchain_openai import ChatOpenAI
-except Exception:
+    from backend.llm import chatbot  # chatbot 必须是实例
+except ImportError:
     print("⚠️ Warning: chatbot not found, using mock reply.")
-    TenantChatbot = None
-
+    chatbot = None
 
 # ==============================
 # FastAPI 配置
@@ -32,16 +28,6 @@ class ChatResponse(BaseModel):
     reply: str
 
 # ==============================
-# 初始化 TenantChatbot
-# ==============================
-chatbot = None
-if TenantChatbot:
-    vectordb = ensure_vector_store()
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
-    chatbot = TenantChatbot(vectordb=vectordb, llm=llm)
-    print("✅ TenantChatbot initialized successfully!")
-
-# ==============================
 # 测试路由
 # ==============================
 @app.get("/ping")
@@ -55,12 +41,13 @@ def ping():
 @app.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     """
-    调用 TenantChatbot 生成回答
+    调用 llm.py 中初始化好的 TenantChatbot 实例生成回答
     """
     try:
         if chatbot is None:
             reply_text = "(Mock) Model not connected yet."
         else:
+            # 确保使用实例调用 process_query
             reply_text = chatbot.process_query(req.message)
         return {"reply": reply_text}
     except Exception as e:
@@ -86,4 +73,3 @@ def get_user(user_id: str):
     查询用户聊天历史
     """
     return {"user_id": user_id, "history": "这里返回用户历史记录"}
-# ==============================
