@@ -49,40 +49,13 @@ except Exception as e:
     docs = []
 
 
-class LocalMiniEmbeddings:
-    """一个简单的、本地可复现的伪嵌入器（仅演示）。
-    DO NOT use in production. It deterministically maps text to a 384-d vector via hashing.
-    """
-    def __init__(self, dim: int = 384):
-        self.dim = dim
-
-    def _hash_to_vec(self, text: str) -> List[float]:
-        h = hashlib.sha256(text.encode('utf-8')).digest()
-        # repeat hash to fill dimension
-        needed = self.dim
-        data = []
-        while needed > 0:
-            h = hashlib.sha256(h).digest()
-            chunk = np.frombuffer(h, dtype=np.uint8).astype(np.float32)
-            data.append(chunk)
-            needed -= len(chunk)
-        v = np.concatenate(data)[:self.dim]
-        v = (v - v.mean()) / (v.std() + 1e-6)
-        return v.tolist()
-
-    def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        return [self._hash_to_vec(t) for t in texts]
-
-    def embed_query(self, text: str) -> List[float]:
-        return self._hash_to_vec(text)
 
 # 构建嵌入器
 if EMBEDDINGS_BACKEND == 'OPENAI':
     if not OPENAI_API_KEY:
         raise RuntimeError('OPENAI_API_KEY 未设置，但 EMBEDDINGS_BACKEND=OPENAI。请设置环境变量或切换到 LOCAL。')
     embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
-else:
-    embeddings = LocalMiniEmbeddings()
+
 
 print('✅ Embeddings ready:', type(embeddings).__name__)
 

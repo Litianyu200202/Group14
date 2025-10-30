@@ -9,8 +9,8 @@ import traceback
 try:
     from backend.llm import chatbot  # chatbot 必须是实例
 except ImportError:
-    print("⚠️ Warning: chatbot not found, using mock reply.")
     chatbot = None
+    print("❌ Failed to import chatbot from backend.llm")
 
 # ==============================
 # FastAPI 配置
