@@ -274,3 +274,72 @@ if col2.button("👎"):
     #     )
     #     st.write("感谢您的反馈，我们已通知中介。")
 ```
+好的。您（作为LLM负责人）已经完成了一个非常全面且技术上很先进的后端。这个后端（我们称之为 `llm3.py`）现在功能齐全，并且包含了您后来要求的所有新功能（如注册 和邮件反馈）。
+
+以下是您现有 `llm3.py` 后端**完整的**功能逻辑总结，您可以将其视为您工作的最终快照。
+
+---
+
+### 1. 启动与配置
+当系统（`app.py`）导入 `llm3.py` 时：
+1.  **加载凭据：** 它会立即从 `.env` 文件 中读取**所有**必需的密钥，包括 `OPENAI_API_KEY`, `DATABASE_URL`，以及用于邮件提醒的 `EMAIL_` 变量。
+2.  **初始化全局对象：** 它会创建全局共享的 `llm`（用于聊天）、`extraction_llm`（用于摘要） 和 `embeddings` 实例。
+
+### 2. 用户注册与登录（新功能）
+这是前端 `app.py` 必须调用的**第一道门**。您的后端提供了两个新的辅助函数：
+
+1.  **`register_user(email, name)`**
+    * **逻辑：** 尝试将 `email` (作为`tenant_id`) 和 `name` `INSERT` 到新的 `users` 表 中。
+    * **成功：** 返回 `True`。
+    * **失败：** 如果邮箱（`tenant_id`）已存在（`UniqueViolation`），则返回 `False`，告知 `app.py`“用户已存在”。
+2.  **`check_user_login(email)`**
+    * **逻辑：** 检查 `users` 表 中是否存在该 `email` ( `tenant_id`)。
+    * **返回：** `True`（用户存在）或 `False`（用户不存在）。
+
+### 3. AI 机器人初始化（每个用户一次）
+* **时机：** 在 `app.py` **确认**用户登录或注册成功后。
+* **逻辑：** `app.py` **必须**调用 `TenantChatbot(llm_instance=llm, tenant_id=user_email)` 来创建该用户的专属机器人实例。
+* **内部操作：**
+    1.  **加载永久记忆 (S3)：** `TenantChatbot` 的 `__init__` 会立即创建 `Psycopg2ChatHistory` 实例。
+    2.  **读取数据库：** `Psycopg2ChatHistory` 会**立即**查询 `chat_history` 表，拉取该 `tenant_id` 的历史对话（最多10条）并加载到内存中。
+    3.  **注入记忆：** 将这个“预热”过的记忆体 (`ConversationBufferWindowMemory`) 注入到 `ConversationChain` 和 `agent` 中。
+
+### 4. 核心功能：智能路由 (`process_query`)
+当用户发送消息时，`app.py` 会调用 `process_query`，该函数按以下**严格的优先级**执行操作：
+
+1.  **意图：新维修请求 (S5-写)**
+    * **触发：** 包含 `maintenance_keywords`（如 "broken"）但不含 "status"。
+    * **动作：** 立即返回 `MAINTENANCE_REQUEST_TRIGGERED` 字符串。`app.py` 必须捕获此信号并显示维修表单。
+
+2.  **意图：查询维修状态 (S5-读)**
+    * **触发：** 包含 `status_keywords`（如 "progress"）。
+    * **动作：** 调用 `check_maintenance_status(tenant_id)`，查询 `maintenance_requests` 表，并返回一个格式化好的状态列表（例如 `"* REQ-123: ... **Pending**"`）。
+
+3.  **意图：合同问答 (S4-RAG)**
+    * **触发：** 包含 `contract_keywords`（如 "clause", "deposit"）。
+    * **动作：**
+        * 检查 `user_vector_store_exists`。如果不存在，返回 "请先上传PDF"。
+        * 如果存在，调用 `get_user_vector_store_path(tenant_id)`（它会使用 `hashlib` 将邮箱哈希成安全路径）。
+        * 加载该用户**专属**的ChromaDB 并执行 `RetrievalQA.invoke`。
+
+4.  **意图：工具计算 (Agent)**
+    * **触发：** 包含 `calc_keywords`（如 "calculate"）。
+    * **动作：** 调用 `agent.invoke` 以使用 `calculate_rent_tool`。
+
+5.  **意图：通用闲聊 (S3-读/写)**
+    * **触发：** 以上都不是。
+    * **动作：** 调用 `conversation.invoke`。（此操作会**自动**读/写 `chat_history` 数据库）。
+
+### 5. 核心功能：文件上传 (`create_user_vectorstore`)
+* **时机：** 当 `app.py` 在用户上传PDF后调用此函数时。
+* **逻辑：**
+    1.  **处理PDF：** 使用 `PyPDFLoader` 和 `ChromaDB` 将PDF转换为向量并**保存到文件系统**（`backend/vector_stores/[hashed_email]`）。
+    2.  **主动摘要 (改进一)：** 立即调用 `create_extraction_chain` 和 `ContractSummary` Pydantic模型，从PDF中提取租金、日期等摘要信息。
+    3.  **返回：** 将提取的摘要**字典** 返回给 `app.py`。
+
+### 6. 核心功能：反馈与警报 (`log_user_feedback`)
+* **时机：** 当 `app.py` 在用户点击 `👍`/`👎` 后调用此函数时。
+* **逻辑（三合一）：**
+    1.  **写入数据库 (反馈)：** `INSERT` 用户的反馈（`query`, `response`, `rating`, `comment`）到 `user_feedback` 表。
+    2.  **邮件提醒 (中介)：** 如果 `rating == -1`（即 `👎`），则调用 `_send_feedback_email_alert` 使用 `smtplib` 和 `.env` 邮件凭据 向中介发送一封包含完整对话上下文（`query`, `response`, `comment`）的警报邮件。
+    3.  **写入数据库 (UX 改进)：** 如果 `rating == -1`，**同时**向 `chat_history` 表 `INSERT` 一条AI的“道歉/确认”消息，确保这个“承认错误”的记录在用户的永久聊天记录中可见。
