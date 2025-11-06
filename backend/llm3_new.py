@@ -171,11 +171,12 @@ def _send_feedback_email_alert(tenant_id: str, query: str, response: str, commen
 
 def log_user_feedback(tenant_id: str, query: str, response: str, rating: int, comment: str | None = None) -> bool:
     """
-    将用户的点赞/点踩反馈写入 PostgreSQL，并在 👎 时触发邮件警报。
-   
+    将用户的点赞/点踩反馈写入 PostgreSQL，
+    在 👎 时触发邮件警报，
+    并 [UX 改进] 在聊天记录中插入一条确认消息。
     """
-    # 步骤 1: 始终将反馈写入数据库
-    sql = """
+    # 步骤 1: 始终将反馈写入 user_feedback 表
+    sql_feedback = """
     INSERT INTO user_feedback (tenant_id, query, response, rating, comment)
     VALUES (%s, %s, %s, %s, %s);
     """
@@ -186,18 +187,41 @@ def log_user_feedback(tenant_id: str, query: str, response: str, rating: int, co
             raise Exception("获取数据库连接失败")
         
         with conn.cursor() as cur:
-            cur.execute(sql, (tenant_id, query, response, rating, comment))
+            cur.execute(sql_feedback, (tenant_id, query, response, rating, comment))
             conn.commit()
-        conn.close()
+        # (不要在这里关闭连接，我们还有工作要做)
+        
         print(f"✅ 成功记录反馈 (租户: {tenant_id}, 评分: {rating})")
         db_success = True
+
+        # --- [UX 改进] ---
+        # 步骤 2: 如果是 👎，向主聊天记录中也插入一条AI的“确认”消息
+        if rating == -1 and comment:
+            # 这条消息将永久保存，用户下次登录时可以看到
+            ai_ack_message = (
+                f"（系统提示：我已收到您对上一个回答的反馈：'{comment}'。"
+                f"我已将此问题通知人类中介，他们会尽快跟进。）"
+            )
+            
+            sql_chat_history = """
+            INSERT INTO chat_history (tenant_id, message_type, message_content)
+            VALUES (%s, 'ai', %s);
+            """
+            with conn.cursor() as cur:
+                cur.execute(sql_chat_history, (tenant_id, ai_ack_message))
+                conn.commit()
+            print(f"✅ 已在 {tenant_id} 的聊天记录中插入AI确认消息。")
+        # --- [UX 改进 结束] ---
+
     except Exception as e:
         print(f"❌ 反馈数据库写入失败: {e}")
         if conn:
             conn.rollback()
-            conn.close()
+    finally:
+        if conn:
+            conn.close() # 在所有操作完成后关闭连接
     
-    # 步骤 2: 如果是 👎 (rating = -1) 并且有评论，触发邮件
+    # 步骤 3: 如果是 👎，(在数据库操作后) 触发邮件
     if rating == -1 and comment:
         _send_feedback_email_alert(tenant_id, query, response, comment)
     
