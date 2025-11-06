@@ -44,6 +44,7 @@ st.markdown("""
 # -------------------------
 API_CHAT_URL = "http://127.0.0.1:8000/chat"
 API_USER_URL = "http://127.0.0.1:8000/user"
+API_REGISTER_URL = "http://127.0.0.1:8000/register"
 API_UPLOAD_URL = "http://127.0.0.1:8000/upload"
 API_FEEDBACK_URL = "http://127.0.0.1:8000/feedback"
 API_MAINTENANCE_URL = "http://127.0.0.1:8000/maintenance"
@@ -74,8 +75,13 @@ with st.sidebar:
     st.header("🔧 Settings")
     st.markdown("---")
 
-    # 🧑‍💻 Login
-    if not st.session_state.logged_in:
+    # 🧩 登录 / 注册 选项切换
+    auth_mode = st.radio("选择操作模式", ["登录 Login", "注册 Register"], horizontal=True)
+
+    # -------------------------
+    # 🧑‍💻 登录模块
+    # -------------------------
+    if auth_mode == "登录 Login" and not st.session_state.logged_in:
         st.subheader("📧 Login with Email")
         email = st.text_input("Enter your email address")
 
@@ -93,12 +99,45 @@ with st.sidebar:
                         else:
                             st.error("⚠️ Invalid response from backend.")
                     else:
-                        st.error("⚠️ User not found. Please check your email.")
+                        st.error("⚠️ User not found. Please check your email or register.")
                 except Exception as e:
                     st.error(f"❌ Could not connect to backend: {e}")
             else:
                 st.warning("Please enter your email first.")
-    else:
+
+    # -------------------------
+    # 🆕 注册模块
+    # -------------------------
+    elif auth_mode == "注册 Register" and not st.session_state.logged_in:
+        st.subheader("🆕 Register New Account")
+        name = st.text_input("Your Name")
+        email = st.text_input("Your Email (as login ID)")
+
+        if st.button("Register"):
+            if name and email:
+                try:
+                    payload = {"tenant_id": email, "user_name": name}
+                    response = requests.post(API_REGISTER_URL, data=payload, timeout=10)
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get("success", True):
+                            st.success("✅ Registration successful! Logging you in...")
+                            st.session_state.logged_in = True
+                            st.session_state.user_info = {"user_id": email, "name": name}
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Registration failed — this email may already exist.")
+                    else:
+                        st.error("❌ Server error during registration.")
+                except Exception as e:
+                    st.error(f"❌ Could not connect to backend: {e}")
+            else:
+                st.warning("Please enter both name and email.")
+
+    # -------------------------
+    # 👋 已登录显示
+    # -------------------------
+    elif st.session_state.logged_in:
         name = st.session_state.user_info.get("name", "User")
         st.success(f"👋 Hi, {name}!")
         if st.button("Logout"):
@@ -176,14 +215,7 @@ with st.sidebar:
                     st.error(f"❌ Error: {e}")
 
 # -------------------------
-# 🚫 Require Login
-# -------------------------
-if not st.session_state.logged_in:
-    st.warning("🔒 Please log in first.")
-    st.stop()
-
-# -------------------------
-# 📘 Show Contract Summary on Main Page
+# 📘 Show Contract Summary
 # -------------------------
 if st.session_state.contract_summary:
     st.markdown("### 📄 Your Contract Summary")
@@ -219,11 +251,10 @@ if user_input or st.session_state.get("trigger_send", False):
     with st.spinner("🤔 Thinking..."):
         try:
             payload = {
-                "tenant_id": st.session_state.user_info.get("user_id", "Unknown"),
+                "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
                 "message": user_input
             }
             response = requests.post(API_CHAT_URL, data=payload, timeout=20)
-
             if response.status_code == 200:
                 data = response.json()
                 ai_reply = data.get("reply", "No reply found.")
@@ -234,7 +265,6 @@ if user_input or st.session_state.get("trigger_send", False):
             else:
                 ai_reply = f"⚠️ Backend returned error: {response.status_code}"
                 property_data = None
-
         except Exception as e:
             ai_reply = f"❌ Could not connect to backend: {e}"
             property_data = None
@@ -253,7 +283,7 @@ if user_input or st.session_state.get("trigger_send", False):
     with col1:
         if st.button("👍", key=f"like_{user_input}"):
             requests.post(API_FEEDBACK_URL, data={
-                "tenant_id": st.session_state.user_info.get("user_id"),
+                "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
                 "query": user_input,
                 "response": ai_reply,
                 "rating": 1
@@ -265,7 +295,7 @@ if user_input or st.session_state.get("trigger_send", False):
             user_comment = st.text_area("请告诉我们哪里需要改进：", key=f"comment_{user_input}")
             if st.button("提交反馈", key=f"submit_{user_input}"):
                 requests.post(API_FEEDBACK_URL, data={
-                    "tenant_id": st.session_state.user_info.get("user_id"),
+                    "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
                     "query": user_input,
                     "response": ai_reply,
                     "rating": -1,
@@ -284,4 +314,3 @@ if user_input or st.session_state.get("trigger_send", False):
 
     time.sleep(0.3)
     st.rerun()
-
