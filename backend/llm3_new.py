@@ -5,22 +5,17 @@ import re
 from typing import List, Any, Dict, Optional
 
 # LangChain core
+# ( ... 保持不变 ... )
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.chains import RetrievalQA, ConversationChain, create_extraction_chain
 from langchain.agents import initialize_agent, AgentType
 from langchain.prompts import ChatPromptTemplate
 from langchain.tools import Tool
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-# --- [FIX] 迁移到 langchain_community ---
 from langchain_community.vectorstores import Chroma
 from langchain_community.document_loaders import PyPDFLoader
-
-# --- [FIX] 迁移到 langchain_core ---
 from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-
-# --- [FIX] 从 langchain.memory 导入 (保持不变) ---
 from langchain.memory import (
     ConversationBufferWindowMemory 
 )
@@ -30,30 +25,41 @@ import shutil
 import psycopg2
 from pydantic import BaseModel, Field
 import hashlib
+import smtplib # <--- [NEW EMAIL/FEEDBACK FUNCTION]
+from email.message import EmailMessage # <--- [NEW EMAIL/FEEDBACK FUNCTION]
 
 print('✅ Libraries imported.')
 
 
 # === API Key & Database Config ===
-# (保持不变)
+# ( ... 保持不变 ... )
 from dotenv import load_dotenv
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 DATABASE_URL = os.getenv('DATABASE_URL')
 EMBEDDINGS_BACKEND = os.getenv('EMBEDDINGS_BACKEND', 'OPENAI').upper()
 VECTORSTORE_BACKEND = os.getenv('VECTORSTORE_BACKEND', 'CHROMA').upper()
+
+# --- [NEW EMAIL/FEEDBACK FUNCTION] ---
+# 从 .env 加载邮件凭据
+EMAIL_SENDER = os.getenv('EMAIL_SENDER')
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD')
+EMAIL_RECEIVER = os.getenv('EMAIL_RECEIVER')
+# --- [END NEW] ---
+
 print(f'🔐 OPENAI_API_KEY set: {bool(OPENAI_API_KEY)}')
 print(f'🧠 EMBEDDINGS_BACKEND = {EMBEDDINGS_BACKEND}')
 print(f'💾 VECTORSTORE_BACKEND = {VECTORSTORE_BACKEND}')
 print(f'🐘 DATABASE_URL set: {bool(DATABASE_URL)}')
+print(f'📧 EMAIL_SENDER set: {bool(EMAIL_SENDER)}')
 
 
 # --- 全局、无状态的对象 (Global, Stateless Objects) ---
-# (保持不变)
+# ( ... 保持不变 ... )
 if EMBEDDINGS_BACKEND == 'OPENAI':
     if not OPENAI_API_KEY:
         raise RuntimeError('OPENAI_API_KEY 未设置。')
-    embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+    embeddings = OpenAIEmbeddings(openai_key=OPENAI_API_KEY)
 print('✅ Embeddings ready:', type(embeddings).__name__)
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2, api_key=OPENAI_API_KEY)
 extraction_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0, api_key=OPENAI_API_KEY) 
@@ -61,7 +67,7 @@ print('✅ LLMs ready: gpt-4o-mini (chat) & gpt-4o-mini (extraction)')
 
 
 # === 数据库函数 (Database Functions) [S5] ===
-# (保持不变, get_db_connection, log_maintenance_request, check_maintenance_status)
+# ( ... 保持不变, get_db_connection, log_maintenance_request, check_maintenance_status)
 def get_db_connection():
     # ( ... 内部代码保持不变 ... )
     try:
@@ -125,16 +131,55 @@ def check_maintenance_status(tenant_id: str) -> str:
         if conn: conn.close()
         return "抱歉，查询您的维修记录时遇到错误。"
 
-# --- [NEW FEEDBACK FUNCTION] ---
+# --- [NEW EMAIL/FEEDBACK FUNCTION] ---
+def _send_feedback_email_alert(tenant_id: str, query: str, response: str, comment: str):
+    """(内部辅助函数) 仅在 👎 时发送邮件。"""
+    if not EMAIL_SENDER or not EMAIL_PASSWORD or not EMAIL_RECEIVER:
+        print("⚠️ 邮件警报：EMAIL 环境变量未完全配置，跳过发送。")
+        return
+
+    print(f"🌀 正在向 {EMAIL_RECEIVER} 发送 👎 反馈邮件...")
+    try:
+        msg = EmailMessage()
+        msg.set_content(
+            f"租户 (Tenant): {tenant_id} 提交了负面反馈。\n\n"
+            f"================================\n"
+            f"用户的原始问题:\n"
+            f"{query}\n\n"
+            f"================================\n"
+            f"机器人失败的回答:\n"
+            f"{response}\n\n"
+            f"================================\n"
+            f"用户的评论:\n"
+            f"{comment}\n\n"
+            f"请尽快跟进。"
+        )
+        msg['Subject'] = f"[Chatbot 警报] 来自租户 {tenant_id} 的负面反馈"
+        msg['From'] = EMAIL_SENDER
+        msg['To'] = EMAIL_RECEIVER
+
+        # (示例使用 Gmail)
+        # 您可能需要根据您的邮件服务商更改 'smtp.gmail.com'
+        s = smtplib.SMTP('smtp.gmail.com', 587)
+        s.starttls()
+        s.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        s.send_message(msg)
+        s.quit()
+        print("✅ 邮件警报发送成功。")
+    except Exception as e:
+        print(f"❌ 邮件警报发送失败: {e}")
+
 def log_user_feedback(tenant_id: str, query: str, response: str, rating: int, comment: str | None = None) -> bool:
     """
-    将用户的点赞/点踩反馈写入 PostgreSQL 数据库。
-    (此函数由 app.py 在用户点击 👍/👎 时调用)
+    将用户的点赞/点踩反馈写入 PostgreSQL，并在 👎 时触发邮件警报。
+   
     """
+    # 步骤 1: 始终将反馈写入数据库
     sql = """
     INSERT INTO user_feedback (tenant_id, query, response, rating, comment)
     VALUES (%s, %s, %s, %s, %s);
     """
+    db_success = False
     try:
         conn = get_db_connection()
         if conn is None:
@@ -144,32 +189,33 @@ def log_user_feedback(tenant_id: str, query: str, response: str, rating: int, co
             cur.execute(sql, (tenant_id, query, response, rating, comment))
             conn.commit()
         conn.close()
-        
         print(f"✅ 成功记录反馈 (租户: {tenant_id}, 评分: {rating})")
-        return True
+        db_success = True
     except Exception as e:
         print(f"❌ 反馈数据库写入失败: {e}")
         if conn:
             conn.rollback()
             conn.close()
-        return False
-# --- [END NEW FEEDBACK FUNCTION] ---
+    
+    # 步骤 2: 如果是 👎 (rating = -1) 并且有评论，触发邮件
+    if rating == -1 and comment:
+        _send_feedback_email_alert(tenant_id, query, response, comment)
+    
+    return db_success
+# --- [END NEW EMAIL/FEEDBACK FUNCTION] ---
 
 
 # === 向量库函数 (Vector Store Functions) [S6] ===
-# (全部保持不变)
+# ( ... 内部代码保持不变 ... )
 VECTOR_STORE_DIR_BASE = "backend/vector_stores"
 os.makedirs(VECTOR_STORE_DIR_BASE, exist_ok=True)
-
 def get_user_vector_store_path(tenant_id: str) -> str:
     # ( ... 内部代码保持不变 ... )
     hashed_id = hashlib.sha256(tenant_id.encode('utf-8')).hexdigest()
     return os.path.join(VECTOR_STORE_DIR_BASE, hashed_id)
-
 def user_vector_store_exists(tenant_id: str) -> bool:
     # ( ... 内部代码保持不变 ... )
     return os.path.exists(get_user_vector_store_path(tenant_id))
-
 class ContractSummary(BaseModel):
     # ( ... 内部代码保持不变 ... )
     monthly_rent: Optional[float] = Field(description="The monthly rental amount")
@@ -178,7 +224,6 @@ class ContractSummary(BaseModel):
     lease_end_date: Optional[str] = Field(description="The end date of the lease (YYYY-MM-DD)")
     tenant_name: Optional[str] = Field(description="The full name of the Tenant")
     landlord_name: Optional[str] = Field(description="The full name of the Landlord")
-
 def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any] | None:
     # ( ... 内部代码保持不变 ... )
     persist_directory = get_user_vector_store_path(tenant_id)
@@ -187,7 +232,6 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
         shutil.rmtree(persist_directory)
     print(f"⚙️ 正在为 {tenant_id} (Hashed: {persist_directory}) 从 {pdf_file_path} 创建向量库...")
     try:
-        # ( ... 内部代码保持不变 ... )
         loader = PyPDFLoader(pdf_file_path)
         docs = loader.load()
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
@@ -214,7 +258,7 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
         return None
 
 # === 智能体与工具 (Agent & Tools) ===
-# (全部保持不变)
+# ( ... 内部代码保持不变 ... )
 def calculate_rent_tool(query: str) -> str:
     # ( ... 内部代码保持不变 ... )
     nums = [int(x) for x in re.findall(r"\d+", query)]
@@ -232,7 +276,7 @@ print('🧰 Tool ready: calculate_rent')
 
 
 # === 自定义的 Psycopg2 聊天记录类 ===
-# (全部保持不变)
+# ( ... 内部代码保持不变 ... )
 class Psycopg2ChatHistory(BaseChatMessageHistory):
     # ( ... 内部代码保持不变 ... )
     def __init__(self, tenant_id: str, db_url: str):
@@ -303,7 +347,7 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
 
 
 # === 主聊天机器人 (The Main Chatbot) ===
-# (全部保持不变)
+# ( ... 内部代码保持不变 ... )
 class TenantChatbot:
     # ( ... 内部代码保持不变 ... )
     def __init__(self, llm_instance, tenant_id: str):
