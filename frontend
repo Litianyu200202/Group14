@@ -4,7 +4,7 @@ import pandas as pd
 import time
 
 # -------------------------
-# Page and Style Settings
+# 🎨 Page and Style Settings
 # -------------------------
 st.set_page_config(
     page_title="🏠 Tenant Chatbot Frontend",
@@ -39,33 +39,100 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------
-#  Backend API Endpoint
+# 🌐 Backend API Endpoints
 # -------------------------
-API_URL = "http://127.0.0.1:8000/chat"
+API_CHAT_URL = "http://127.0.0.1:8000/chat"
+API_USER_URL = "http://127.0.0.1:8000/user"
+API_UPLOAD_URL = "http://127.0.0.1:8000/upload"
 
 # -------------------------
 # Initialize Session State
 # -------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "user_info" not in st.session_state:
+    st.session_state.user_info = {}
 
 # -------------------------
-# Page Header
+# 🏷️ Page Header
 # -------------------------
 st.markdown('<h1 class="main-header">🏠 Tenant Chatbot Assistant</h1>', unsafe_allow_html=True)
 
 # -------------------------
-#  Sidebar Configuration
+# 🔧 Sidebar Configuration
 # -------------------------
 with st.sidebar:
     st.header("🔧 Settings")
-    st.info("This frontend connects to your FastAPI backend endpoint:\n\n`http://127.0.0.1:8000/chat`")
     st.markdown("---")
+
+    # 🧑‍💻 Email-based Login
+    if not st.session_state.logged_in:
+        st.subheader("📧 Login with Email")
+        email = st.text_input("Enter your email address")
+
+        if st.button("Login"):
+            if email:
+                try:
+                    response = requests.get(API_USER_URL, params={"email": email}, timeout=10)
+                    if response.status_code == 200:
+                        user_data = response.json()
+                        if "user_id" in user_data:
+                            st.session_state.user_info = user_data
+                            st.session_state.logged_in = True
+                            st.success(f"✅ Hi, {user_data.get('name', 'User')} 👋")
+                            st.rerun()
+                        else:
+                            st.error("⚠️ Invalid response from backend.")
+                    else:
+                        st.error("⚠️ User not found. Please check your email.")
+                except Exception as e:
+                    st.error(f"❌ Could not connect to backend: {e}")
+            else:
+                st.warning("Please enter your email first.")
+    else:
+        name = st.session_state.user_info.get("name", "User")
+        st.success(f"👋 Hi, {name}!")
+        if st.button("Logout"):
+            st.session_state.logged_in = False
+            st.session_state.user_info = {}
+            st.session_state.messages = []
+            st.rerun()
+
+    st.markdown("---")
+
+    # 📄 File Upload Section
+    st.subheader("📄 Upload Contract PDF")
+    uploaded_file = st.file_uploader("Select your tenancy agreement (PDF)", type=["pdf"])
+
+    if uploaded_file and st.session_state.logged_in:
+        with st.spinner("📚 Processing your contract..."):
+            try:
+                files = {"file": uploaded_file.getvalue()}
+                data = {"tenant_id": st.session_state.user_info.get("user_id")}
+                response = requests.post(API_UPLOAD_URL, data=data, files={"file": uploaded_file})
+                if response.status_code == 200:
+                    res = response.json()
+                    summary = res.get("summary", {})
+                    st.success("✅ Contract successfully processed!")
+                    st.markdown("#### 📘 Contract Summary:")
+                    st.json(summary)
+                else:
+                    st.error(f"⚠️ Upload failed: {response.status_code}")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
+
+    st.markdown("---")
+
+    # 🧹 Clear Chat
     if st.button("🗑️ Clear Chat History"):
         st.session_state.messages = []
         st.success("Chat history cleared!")
 
     st.markdown("---")
+
+    # 💡 Sample Questions
     st.write("💡 Sample Questions:")
     if st.button("Who maintains the aircon?"):
         st.session_state.messages.append({"role": "user", "content": "Who maintains the aircon?"})
@@ -77,7 +144,7 @@ with st.sidebar:
         st.rerun()
 
 # -------------------------
-# Display Chat History
+# 💬 Display Chat History
 # -------------------------
 for msg in st.session_state.messages:
     css_class = "user-message" if msg["role"] == "user" else "assistant-message"
@@ -89,24 +156,33 @@ for msg in st.session_state.messages:
     """, unsafe_allow_html=True)
 
 # -------------------------
-# Chat Input
+# 🚫 Require Login Before Chat
+# -------------------------
+if not st.session_state.logged_in:
+    st.warning("🔒 Please log in with your email before chatting.")
+    st.stop()
+
+# -------------------------
+# 💬 Chat Input
 # -------------------------
 user_input = st.chat_input("Type your message here...")
 
 # -------------------------
-# Send Logic
+# 🚀 Send Logic
 # -------------------------
 if user_input or st.session_state.get("trigger_send", False):
     if not user_input and st.session_state.get("trigger_send", False):
-        # Triggered by sidebar button
         user_input = st.session_state.messages[-1]["content"]
         st.session_state.trigger_send = False
     st.session_state.messages.append({"role": "user", "content": user_input})
 
     with st.spinner("🤔 Thinking..."):
         try:
-            payload = {"user_id": "U001", "message": user_input}
-            response = requests.post(API_URL, json=payload, timeout=20)
+            payload = {
+                "tenant_id": st.session_state.user_info.get("user_id", "Unknown"),
+                "message": user_input
+            }
+            response = requests.post(API_CHAT_URL, data=payload, timeout=20)
 
             if response.status_code == 200:
                 data = response.json()
