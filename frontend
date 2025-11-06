@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import pandas as pd
 import time
+import os
 
 # -------------------------
 # 🎨 Page and Style Settings
@@ -44,6 +45,8 @@ st.markdown("""
 API_CHAT_URL = "http://127.0.0.1:8000/chat"
 API_USER_URL = "http://127.0.0.1:8000/user"
 API_UPLOAD_URL = "http://127.0.0.1:8000/upload"
+API_FEEDBACK_URL = "http://127.0.0.1:8000/feedback"
+API_MAINTENANCE_URL = "http://127.0.0.1:8000/maintenance"
 
 # -------------------------
 # Initialize Session State
@@ -54,6 +57,10 @@ if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user_info" not in st.session_state:
     st.session_state.user_info = {}
+if "contract_summary" not in st.session_state:
+    st.session_state.contract_summary = None
+if "show_maintenance_form" not in st.session_state:
+    st.session_state.show_maintenance_form = False
 
 # -------------------------
 # 🏷️ Page Header
@@ -67,7 +74,7 @@ with st.sidebar:
     st.header("🔧 Settings")
     st.markdown("---")
 
-    # 🧑‍💻 Email-based Login
+    # 🧑‍💻 Login
     if not st.session_state.logged_in:
         st.subheader("📧 Login with Email")
         email = st.text_input("Enter your email address")
@@ -95,9 +102,8 @@ with st.sidebar:
         name = st.session_state.user_info.get("name", "User")
         st.success(f"👋 Hi, {name}!")
         if st.button("Logout"):
-            st.session_state.logged_in = False
-            st.session_state.user_info = {}
-            st.session_state.messages = []
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
             st.rerun()
 
     st.markdown("---")
@@ -115,6 +121,7 @@ with st.sidebar:
                 if response.status_code == 200:
                     res = response.json()
                     summary = res.get("summary", {})
+                    st.session_state.contract_summary = summary
                     st.success("✅ Contract successfully processed!")
                     st.markdown("#### 📘 Contract Summary:")
                     st.json(summary)
@@ -143,6 +150,46 @@ with st.sidebar:
         st.session_state.trigger_send = True
         st.rerun()
 
+    st.markdown("---")
+
+    # 🛠️ Maintenance Request Form
+    if st.session_state.get("show_maintenance_form", False):
+        st.subheader("🛠️ Submit Maintenance Request")
+        with st.form("maintenance_form"):
+            location = st.text_input("Issue location (e.g., kitchen, aircon)")
+            description = st.text_area("Issue description (e.g., water leakage)")
+            submitted = st.form_submit_button("Submit")
+            if submitted:
+                try:
+                    data = {
+                        "tenant_id": st.session_state.user_info.get("user_id"),
+                        "location": location,
+                        "description": description
+                    }
+                    r = requests.post(API_MAINTENANCE_URL, data=data)
+                    if r.status_code == 200:
+                        st.success("✅ Request submitted successfully!")
+                        st.session_state.show_maintenance_form = False
+                    else:
+                        st.error("⚠️ Failed to submit maintenance request.")
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+
+# -------------------------
+# 🚫 Require Login
+# -------------------------
+if not st.session_state.logged_in:
+    st.warning("🔒 Please log in first.")
+    st.stop()
+
+# -------------------------
+# 📘 Show Contract Summary on Main Page
+# -------------------------
+if st.session_state.contract_summary:
+    st.markdown("### 📄 Your Contract Summary")
+    st.json(st.session_state.contract_summary)
+    st.markdown("---")
+
 # -------------------------
 # 💬 Display Chat History
 # -------------------------
@@ -154,13 +201,6 @@ for msg in st.session_state.messages:
         <strong>{speaker}:</strong><br>{msg["content"]}
     </div>
     """, unsafe_allow_html=True)
-
-# -------------------------
-# 🚫 Require Login Before Chat
-# -------------------------
-if not st.session_state.logged_in:
-    st.warning("🔒 Please log in with your email before chatting.")
-    st.stop()
 
 # -------------------------
 # 💬 Chat Input
@@ -187,6 +227,9 @@ if user_input or st.session_state.get("trigger_send", False):
             if response.status_code == 200:
                 data = response.json()
                 ai_reply = data.get("reply", "No reply found.")
+                if ai_reply == "MAINTENANCE_REQUEST_TRIGGERED":
+                    st.session_state.show_maintenance_form = True
+                    ai_reply = "🛠️ I understand you need to report an issue. Please fill out the maintenance form in the sidebar."
                 property_data = data.get("properties", None)
             else:
                 ai_reply = f"⚠️ Backend returned error: {response.status_code}"
@@ -196,7 +239,7 @@ if user_input or st.session_state.get("trigger_send", False):
             ai_reply = f"❌ Could not connect to backend: {e}"
             property_data = None
 
-    # Show AI response
+    # Display AI response
     st.session_state.messages.append({"role": "assistant", "content": ai_reply})
     css_class = "assistant-message"
     st.markdown(f"""
@@ -205,7 +248,32 @@ if user_input or st.session_state.get("trigger_send", False):
     </div>
     """, unsafe_allow_html=True)
 
-    # Display property results if any
+    # 👍👎 Feedback Section
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        if st.button("👍", key=f"like_{user_input}"):
+            requests.post(API_FEEDBACK_URL, data={
+                "tenant_id": st.session_state.user_info.get("user_id"),
+                "query": user_input,
+                "response": ai_reply,
+                "rating": 1
+            })
+            st.success("感谢您的反馈！")
+
+    with col2:
+        if st.button("👎", key=f"dislike_{user_input}"):
+            user_comment = st.text_area("请告诉我们哪里需要改进：", key=f"comment_{user_input}")
+            if st.button("提交反馈", key=f"submit_{user_input}"):
+                requests.post(API_FEEDBACK_URL, data={
+                    "tenant_id": st.session_state.user_info.get("user_id"),
+                    "query": user_input,
+                    "response": ai_reply,
+                    "rating": -1,
+                    "comment": user_comment
+                })
+                st.success("感谢您的反馈，我们已通知中介。")
+
+    # Display property data if available
     if property_data:
         st.markdown("#### 🏘️ Recommended Properties:")
         try:
@@ -214,6 +282,6 @@ if user_input or st.session_state.get("trigger_send", False):
         except Exception:
             st.write(property_data)
 
-    # Auto-scroll to bottom
     time.sleep(0.3)
     st.rerun()
+
