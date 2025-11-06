@@ -1,75 +1,324 @@
-# backend/api.py
-from fastapi import FastAPI
-from pydantic import BaseModel
-import traceback
+# api.py
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import uvicorn
+import os
+from typing import Dict, Any, Optional
+import tempfile
+import json
 
-# ==============================
-# 直接导入 llm.py 中已经初始化好的 chatbot 实例
-# ==============================
+# 导入你的LLM模块 - 确保llm3.py在同一目录下
 try:
-    from backend.llm import chatbot  # chatbot 必须是实例
-except ImportError:
-    chatbot = None
-    print("❌ Failed to import chatbot from backend.llm")
+    from llm3 import (
+        TenantChatbot, 
+        create_user_vectorstore, 
+        log_maintenance_request,
+        log_user_feedback,
+        get_db_connection
+    )
+    print("✅ Successfully imported all modules from llm3.py")
+except ImportError as e:
+    print(f"❌ Import error: {e}")
+    # 如果导入失败，尝试相对导入
+    try:
+        from .llm3 import (
+            TenantChatbot, 
+            create_user_vectorstore, 
+            log_maintenance_request,
+            log_user_feedback,
+            get_db_connection
+        )
+        print("✅ Successfully imported using relative import")
+    except ImportError:
+        print("❌ Relative import also failed")
+        raise
 
-# ==============================
-# FastAPI 配置
-# ==============================
-app = FastAPI(title="Real Estate Chatbot API")
+# 初始化FastAPI应用
+app = FastAPI(
+    title="Tenant Chatbot API",
+    description="API for Tenant Chatbot with RAG and Maintenance Features",
+    version="1.0.0"
+)
 
-# ==============================
-# 数据模型
-# ==============================
-class ChatRequest(BaseModel):
-    user_id: str
-    message: str
+# CORS配置 - 允许Streamlit前端访问
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8501", "http://127.0.0.1:8501", "*"],  # 添加通配符用于测试
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-class ChatResponse(BaseModel):
-    reply: str
+# 全局变量存储聊天机器人实例
+chatbot_instances = {}
 
-# ==============================
-# 测试路由
-# ==============================
-@app.get("/ping")
-def ping():
-    """健康检查接口，用于验证 API 是否正常运行"""
-    return {"status": "ok", "message": "API is running"}
+# ==================== 🎯 API端点 ====================
 
-# ==============================
-# Chat 主接口
-# ==============================
-@app.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
+@app.get("/")
+async def root():
+    """健康检查端点"""
+    return {"message": "Tenant Chatbot API is running!", "status": "healthy"}
+
+@app.get("/user")
+async def get_user(email: str):
     """
-    调用 llm.py 中初始化好的 TenantChatbot 实例生成回答
+    根据邮箱获取用户信息
     """
     try:
-        if chatbot is None:
-            reply_text = "(Mock) Model not connected yet."
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+        
+        with conn.cursor() as cur:
+            # 查询用户信息
+            cur.execute("""
+                SELECT tenant_id, user_name, email 
+                FROM tenants 
+                WHERE email = %s OR tenant_id = %s
+            """, (email, email))
+            user_data = cur.fetchone()
+        
+        conn.close()
+        
+        if user_data:
+            return {
+                "user_id": user_data[0],
+                "name": user_data[1],
+                "email": user_data[2]
+            }
         else:
-            # 确保使用实例调用 process_query
-            reply_text = chatbot.process_query(req.message)
-        return {"reply": reply_text}
+            raise HTTPException(status_code=404, detail="User not found")
+            
+    except HTTPException:
+        raise
     except Exception as e:
-        print("❌ Error in /chat:", traceback.format_exc())
-        return {"reply": f"Error: {e}"}
+        print(f"❌ Error in /user endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching user: {str(e)}")
 
-# ==============================
-# 房源查询接口（占位）
-# ==============================
-@app.get("/property")
-def get_property(location: str = None):
+@app.post("/register")
+async def register_user(tenant_id: str = Form(...), user_name: str = Form(...)):
     """
-    未来将由数据库查询函数提供房源信息
+    注册新用户
     """
-    return {"results": f"这里将返回关于 {location} 的房源数据"}
+    conn = None
+    try:
+        conn = get_db_connection()
+        if not conn:
+            raise HTTPException(status_code=500, detail="Database connection failed")
+        
+        with conn.cursor() as cur:
+            # 检查用户是否已存在
+            cur.execute("SELECT tenant_id FROM tenants WHERE tenant_id = %s", (tenant_id,))
+            if cur.fetchone():
+                return {"success": False, "message": "User already exists"}
+            
+            # 插入新用户
+            cur.execute("""
+                INSERT INTO tenants (tenant_id, user_name, email) 
+                VALUES (%s, %s, %s)
+            """, (tenant_id, user_name, tenant_id))
+            conn.commit()
+        
+        return {"success": True, "message": "User registered successfully"}
+        
+    except Exception as e:
+        print(f"❌ Error in /register endpoint: {e}")
+        if conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+    finally:
+        if conn:
+            conn.close()
 
-# ==============================
-# 用户历史接口（占位）
-# ==============================
-@app.get("/user/{user_id}")
-def get_user(user_id: str):
+@app.post("/upload")
+async def upload_contract(
+    file: UploadFile = File(...),
+    tenant_id: str = Form(...)
+):
     """
-    查询用户聊天历史
+    上传并处理合同PDF文件 - 修复Guest用户支持
     """
-    return {"user_id": user_id, "history": "这里返回用户历史记录"}
+    temp_path = None
+    try:
+        print(f"📄 === 开始处理上传 ===")
+        print(f"📄 租户: {tenant_id}")
+        print(f"📄 文件名: {file.filename}")
+        print(f"📄 文件类型: {file.content_type}")
+        
+        # 验证文件类型
+        if not file.filename.lower().endswith('.pdf'):
+            print("❌ 文件类型错误: 不是PDF")
+            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+        
+        # 读取文件内容
+        content = await file.read()
+        print(f"📄 文件大小: {len(content)} bytes")
+        
+        if len(content) == 0:
+            print("❌ 文件内容为空")
+            raise HTTPException(status_code=400, detail="File is empty")
+        
+        # 创建临时文件
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+        
+        print(f"📁 临时文件路径: {temp_path}")
+        
+        # 处理PDF并创建向量库
+        print("🔄 开始处理PDF和创建向量库...")
+        summary_data = create_user_vectorstore(tenant_id, temp_path)
+        
+        if summary_data is None:
+            print("❌ PDF处理返回None")
+            raise HTTPException(status_code=500, detail="Failed to process PDF")
+        
+        # 转换数据格式
+        if hasattr(summary_data, 'dict'):
+            summary_data = summary_data.dict()
+        
+        print(f"✅ PDF处理成功!")
+        print(f"📊 摘要数据: {summary_data}")
+        
+        return {
+            "success": True,
+            "message": "Contract processed successfully",
+            "summary": summary_data
+        }
+        
+    except Exception as e:
+        print(f"❌ 上传处理失败: {e}")
+        import traceback
+        print(f"🔍 完整错误: {traceback.format_exc()}")
+        raise HTTPException(statuscode=500, detail=f"Upload failed: {str(e)}")
+    finally:
+        # 清理临时文件
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+                print(f"🧹 已清理临时文件: {temp_path}")
+            except Exception as e:
+                print(f"⚠️ 清理临时文件失败: {e}")
+
+@app.post("/chat")
+async def chat_with_bot(
+    tenant_id: str = Form(...),
+    message: str = Form(...)
+):
+    """
+    与聊天机器人对话的主要端点 - 添加向量库检查
+    """
+    try:
+        print(f"💬 Chat request from {tenant_id}: {message}")
+        
+        # 检查用户是否有向量库（即是否上传过PDF）
+        from llm3 import user_vector_store_exists
+        has_vector_store = user_vector_store_exists(tenant_id)
+        print(f"📚 User {tenant_id} has vector store: {has_vector_store}")
+        
+        # 获取或创建聊天机器人实例
+        if tenant_id not in chatbot_instances:
+            from llm3 import llm
+            chatbot_instances[tenant_id] = TenantChatbot(llm, tenant_id)
+            print(f"🆕 Created new chatbot instance for {tenant_id}")
+        
+        chatbot = chatbot_instances[tenant_id]
+        
+        # 处理查询
+        response = chatbot.process_query(message, tenant_id)
+        
+        print(f"🤖 Bot response: {response}")
+        
+        # 准备返回数据
+        result = {
+            "reply": response,
+            "tenant_id": tenant_id,
+            "has_contract": has_vector_store  # 添加这个字段用于调试
+        }
+        
+        return result
+        
+    except Exception as e:
+        print(f"❌ Error in /chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
+
+@app.post("/maintenance")
+async def submit_maintenance_request(
+    tenant_id: str = Form(...),
+    location: str = Form(...),
+    description: str = Form(...)
+):
+    """
+    提交维修请求
+    """
+    try:
+        print(f"🛠️ Maintenance request from {tenant_id}: {location} - {description}")
+        request_id = log_maintenance_request(tenant_id, location, description)
+        
+        if request_id:
+            return {
+                "success": True,
+                "message": "Maintenance request submitted successfully",
+                "request_id": request_id
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to submit maintenance request")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error in /maintenance endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Maintenance request failed: {str(e)}")
+
+@app.post("/feedback")
+async def submit_feedback(
+    tenant_id: str = Form(...),
+    query: str = Form(...),
+    response: str = Form(...),
+    rating: int = Form(...),
+    comment: Optional[str] = Form(None)
+):
+    """
+    提交用户反馈
+    """
+    try:
+        print(f"⭐ Feedback from {tenant_id}: rating={rating}")
+        success = log_user_feedback(tenant_id, query, response, rating, comment)
+        
+        if success:
+            return {"success": True, "message": "Feedback submitted successfully"}
+        else:
+            return {"success": False, "message": "Failed to submit feedback"}
+            
+    except Exception as e:
+        print(f"❌ Error in /feedback endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Feedback submission failed: {str(e)}")
+
+# ==================== 🎯 错误处理 ====================
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"success": False, "error": exc.detail}
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    print(f"🚨 Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"success": False, "error": "Internal server error"}
+    )
+
+# ==================== 🚀 启动应用 ====================
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "api:app",  # 这里改为 api:app
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        log_level="debug"
+    )

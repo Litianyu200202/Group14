@@ -11,6 +11,9 @@ venv/
 # Chroma / vector store
 backend/vector_store/
 
+# testing
+backend/test_script.py
+
 # VSCode
 .vscode/
 
