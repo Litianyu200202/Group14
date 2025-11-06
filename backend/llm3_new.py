@@ -130,6 +130,64 @@ def check_maintenance_status(tenant_id: str) -> str:
         print(f"❌ 数据库查询失败: {e}")
         if conn: conn.close()
         return "抱歉，查询您的维修记录时遇到错误。"
+# === 新增：用户账户函数 (User Account Functions) ===
+
+def register_user(tenant_id: str, user_name: str) -> bool:
+    """
+    将一个新用户注册到 'users' 表中。
+    tenant_id 应该是用户的邮箱。
+    """
+    sql = """
+    INSERT INTO users (tenant_id, user_name)
+    VALUES (%s, %s);
+    """
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            raise Exception("获取数据库连接失败")
+        
+        with conn.cursor() as cur:
+            cur.execute(sql, (tenant_id, user_name))
+            conn.commit()
+        conn.close()
+        
+        print(f"✅ 成功注册新用户: {tenant_id}")
+        return True
+    
+    except psycopg2.errors.UniqueViolation:
+        # 错误：该邮箱 (tenant_id) 已经存在
+        print(f"⚠️ 注册失败：{tenant_id} 已存在。")
+        if conn: conn.rollback(); conn.close()
+        return False # 返回 False 告诉 app.py "用户已存在"
+    
+    except Exception as e:
+        print(f"❌ 注册时发生未知错误: {e}")
+        if conn: conn.rollback(); conn.close()
+        return False
+
+def check_user_login(tenant_id: str) -> bool:
+    """
+    检查一个用户 (tenant_id 邮箱) 是否存在于 'users' 表中。
+    """
+    sql = "SELECT EXISTS (SELECT 1 FROM users WHERE tenant_id = %s);"
+    
+    try:
+        conn = get_db_connection()
+        if conn is None:
+            raise Exception("获取数据库连接失败")
+        
+        with conn.cursor() as cur:
+            cur.execute(sql, (tenant_id,))
+            exists = cur.fetchone()[0] # [0] 会是 True 或 False
+        conn.close()
+        
+        return exists # 返回 True (用户存在) 或 False (用户不存在)
+    
+    except Exception as e:
+        print(f"❌ 检查用户登录时出错: {e}")
+        if conn: conn.close()
+        return False # 出现错误时，安全起见返回 False
+
 
 # --- [NEW EMAIL/FEEDBACK FUNCTION] ---
 def _send_feedback_email_alert(tenant_id: str, query: str, response: str, comment: str):
