@@ -7,101 +7,7 @@ uvicorn backend.api:app --reload
 
 这是一个非常好的主意。为 `llm2.py` 准备一个清晰的README总结，可以让您的前端和数据库同学（以及您自己）的工作效率大大提高。
 
-以下是 `llm2.py` 中所有关键类和函数的总结，专为您的README而设计。
 
----
-
-llm2.py 模块功能总结 (README)
-
-概览
-
-`llm2.py` 是我们项目的**核心AI后端**。它不包含任何UI界面，但提供了前端(`app.py`)所需的所有“大脑”功能。它采用“混合存储”架构：
-
-* **PostgreSQL (数据库):** 用于存储结构化数据，如聊天记录 和维修请求。
-* **文件系统 (ChromaDB):** 用于存储非结构化的AI知识库（即合同的向量）。
-
-### 1. 🤖 主要接口 (供 `app.py` 调用)
-
-前端同学（`app.py`）**只需要**直接与以下 `TenantChatbot` 类和 `create_user_vectorstore` 函数交互。
-
-#### `class TenantChatbot`
-这是AI机器人的主类。
-
-* **`__init__(self, llm_instance, tenant_id: str)`**
-    * **功能：** 初始化一个**特定于单个用户**的聊天机器人实例。
-    * **重要：** 必须在用户“登录”后（即我们获得了`tenant_id`，如邮箱）才能调用此函数。
-    * **内部操作：** 它会自动实例化 `Psycopg2ChatHistory`，从数据库加载该 `tenant_id` 的**永久聊天记录**，并将其注入 `ConversationBufferWindowMemory` 和 `agent`。
-
-* **`process_query(self, query: str, tenant_id: str) -> str`**
-    * **功能：** **(这是前端唯一需要调用的“聊天”函数)**。它接收用户的原始提问字符串和 `tenant_id`，返回一个AI回答的字符串。
-    * **内部操作：** 此函数是“总指挥官”，它会自动执行智能路由：
-        1.  检查是否为**维修状态查询** (`status_keywords`) -> 调用 `check_maintenance_status`。
-        2.  检查是否为**新维修请求** (`maintenance_keywords`) -> 返回特殊信号 `MAINTENANCE_REQUEST_TRIGGERED`。
-        3.  检查是否为**合同RAG问答** (`contract_keywords`) -> 调用动态RAG。
-        4.  检查是否为**计算** (`calc_keywords`) -> 调用 `agent`。
-        5.  否则，视为**S3闲聊** -> 调用 `conversation.invoke`（它会自动读/写数据库中的聊天记录）。
-
-#### `create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict | None`
-* **功能：** **(这是前端唯一需要调用的“文件上传”函数)**。它处理用户新上传的PDF文件。
-* **参数：** `tenant_id` (例如 "user@email.com") 和 `pdf_file_path` (Streamlit上传后保存的临时路径)。
-* **内部操作：**
-    1.  使用 `PyPDFLoader` 加载PDF。
-    2.  调用 `get_user_vector_store_path` 获取安全的、哈希过的文件夹路径。
-    3.  使用 `Chroma.from_documents` 将PDF向量化并**保存到文件系统**。
-    4.  **[改进一]** 调用 `create_extraction_chain` 和 `ContractSummary` **主动提取合同摘要**。
-* **返回值：** 返回一个包含摘要（租金、日期等）的**字典**，如果失败则返回 `None`。
-
----
-
-### 2. 🗃️ 数据库接口函数 (供 `app.py` 和内部调用)
-
-这些函数直接与PostgreSQL数据库交互。
-
-* **`log_maintenance_request(...)`**
-    * **功能：** 将一个**新**的维修请求写入到 `maintenance_requests` 表中。
-    * **调用者：** `app.py`（在用户提交维修*表单*后）。
-
-* **`check_maintenance_status(tenant_id)`**
-    * **功能：** **读取** `maintenance_requests` 表，返回该 `tenant_id` 的所有维修请求及其状态。
-    * **调用者：** `TenantChatbot.process_query` (内部自动调用)。
-
-* **`get_db_connection()`**
-    * **功能：** 内部辅助函数，用于从 `DATABASE_URL` 建立 `psycopg2` 连接。
-
----
-
-### 3. 🧠 内部知识库 (RAG) 辅助函数
-
-这些函数支持RAG文件处理，主要由LLM后端内部使用。
-
-* **`get_user_vector_store_path(tenant_id)`**
-    * **功能：** **(关键安全特性)**。将 `tenant_id`（例如 "user@email.com"）转换为一个**安全的、经过哈希的**文件夹名称（例如 "f1a7..."），用于存储ChromaDB。
-    * **实现：** 使用 `hashlib.sha256`。
-
-* **`user_vector_store_exists(tenant_id)`**
-    * **功能：** 检查该用户的向量库（知识库）是否已存在于文件系统。
-
----
-
-### 4. 🛠️ 内部核心类与工具
-
-* **`class Psycopg2ChatHistory`**
-    * **功能：** **(永久记忆的核心)**。这是一个自定义类，它实现了LangChain的 `BaseChatMessageHistory` 接口。
-    * **`messages` (属性)**：被 `ConversationBufferWindowMemory` 调用，从 `chat_history` 表**读取**历史记录。
-    * **`add_message(message)`**：被 `ConversationBufferWindowMemory` 调用，将新消息（Human或AI）**写入** `chat_history` 表。
-
-* **`class ContractSummary`**
-    * **功能：** Pydantic模型，定义了 `create_extraction_chain` 应该从合同中提取哪些字段（例如 `monthly_rent`）。
-
-* **`calculate_rent_tool(query)`**
-    * **功能：** 一个简单的工具，被 `agent` 用来执行数学计算。
-这是一个非常好的做法。一份清晰的README是您（作为LLM负责人）向团队成员交付工作的最佳方式。
-
-我已经根据我们最终版本的 `llm3.py` 编写了一份README。这份文档清楚地说明了**它是什么**、**如何配置**、**数据库需要做什么**以及**前端需要如何调用它**。
-
-您可以直接将以下内容复制到您的 `README.md` 文件中。
-
------
 
 # 🤖 Capstone 项目: llm\_backend.py 模块
 
@@ -149,6 +55,8 @@ OPENAI_API_KEY="sk-..."
 # 2. 数据库连接字符串 (由数据库同学提供)
 DATABASE_URL="postgres://USER:PASSWORD@HOST:PORT/DBNAME"
 ```
+
+**[重要]** 您的 `llm3.py` 文件还需要包含**邮件发送功能**所需的 `EMAIL_` 变量，如果您们要实现 `👎` 邮件提醒功能，请确保它们也在 `.env` 文件中。
 
 -----
 
@@ -203,7 +111,7 @@ CREATE TABLE IF NOT EXISTS user_feedback (
 ## 5\. 💻 前端对接 (致 `app.py` 同学)
 
 前端（Streamlit）需要从此文件 (`llm_backend.py`) 导入**四个**关键部分：
-`from llm_backend import TenantChatbot, llm, create_user_vectorstore, log_maintenance_request, log_user_feedback`
+`from llm_backend import TenantChatbot, llm, create_user_vectorstore, log_maintenance_request, log_user_feedback, user_vector_store_exists`
 
 ### 1\. 登录流程 (初始化)
 
@@ -211,7 +119,10 @@ CREATE TABLE IF NOT EXISTS user_feedback (
 
 ```python
 import streamlit as st
-from llm_backend import TenantChatbot, llm, create_user_vectorstore, log_maintenance_request, log_user_feedback
+from llm_backend import (
+    TenantChatbot, llm, create_user_vectorstore, 
+    log_maintenance_request, log_user_feedback, user_vector_store_exists
+)
 
 # --- 1. 登录界面 ---
 if 'tenant_id' not in st.session_state:
@@ -240,6 +151,7 @@ if 'tenant_id' not in st.session_state:
 else:
     st.title(f"你好, {st.session_state.user_name}!")
     # ... (在此处放置聊天、上传等功能)
+    # (您可以在这里调用 user_vector_store_exists 来检查是否显示“请上传”的消息)
 ```
 
 ### 2\. 聊天功能 (调用 `process_query`)
@@ -333,4 +245,32 @@ if st.session_state.get("show_maintenance_form", False):
                 st.session_state.show_maintenance_form = False
             else:
                 st.error("提交失败，请重试。")
+```
+
+### 5\. 反馈功能 (调用 `log_user_feedback`)
+
+```python
+# (在您的聊天气泡下方)
+col1, col2 = st.columns([1, 10])
+if col1.button("👍"):
+    log_user_feedback(
+        tenant_id=st.session_state.tenant_id,
+        query=prompt, # 您需要存储该气泡的 prompt
+        response=response, # 您需要存储该气泡的 response
+        rating=1
+    )
+    st.write("感谢您的反馈！")
+
+if col2.button("👎"):
+    # (触发弹出 st.text_area 的逻辑)
+    # ...
+    # if comment_submitted:
+    #     log_user_feedback(
+    #         tenant_id=st.session_state.tenant_id,
+    #         query=prompt,
+    #         response=response,
+    #         rating=-1,
+    #         comment=user_comment
+    #     )
+    #     st.write("感谢您的反馈，我们已通知中介。")
 ```
