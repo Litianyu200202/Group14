@@ -10,13 +10,18 @@ import json
 
 # 导入你的LLM模块 - 确保llm3.py在同一目录下
 try:
+    # --- 修复 3 ---
+    # 添加 llm 和 user_vector_store_exists 到主导入列表
     from llm3 import (
         TenantChatbot, 
         create_user_vectorstore, 
         log_maintenance_request,
         log_user_feedback,
-        get_db_connection
+        get_db_connection,
+        user_vector_store_exists, # <-- 添加了此项
+        llm                       # <-- 添加了此项
     )
+    # --- 结束修复 3 ---
     print("✅ Successfully imported all modules from llm3.py")
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -27,7 +32,9 @@ except ImportError as e:
             create_user_vectorstore, 
             log_maintenance_request,
             log_user_feedback,
-            get_db_connection
+            get_db_connection,
+            user_vector_store_exists, # <-- 同样添加在这里
+            llm                       # <-- 同样添加在这里
         )
         print("✅ Successfully imported using relative import")
     except ImportError:
@@ -71,12 +78,13 @@ async def get_user(email: str):
             raise HTTPException(status_code=500, detail="Database connection failed")
         
         with conn.cursor() as cur:
-            # 查询用户信息
+            # --- 修复 1 ---
             cur.execute("""
-                SELECT tenant_id, user_name, email 
+                SELECT tenant_id, user_name, tenant_id AS email 
                 FROM tenants 
-                WHERE email = %s OR tenant_id = %s
-            """, (email, email))
+                WHERE tenant_id = %s
+            """, (email,))
+            # --- 结束修复 1 ---
             user_data = cur.fetchone()
         
         conn.close()
@@ -113,11 +121,12 @@ async def register_user(tenant_id: str = Form(...), user_name: str = Form(...)):
             if cur.fetchone():
                 return {"success": False, "message": "User already exists"}
             
-            # 插入新用户
+            # --- 修复 2 ---
             cur.execute("""
-                INSERT INTO tenants (tenant_id, user_name, email) 
-                VALUES (%s, %s, %s)
-            """, (tenant_id, user_name, tenant_id))
+                INSERT INTO tenants (tenant_id, user_name) 
+                VALUES (%s, %s)
+            """, (tenant_id, user_name))
+            # --- 结束修复 2 ---
             conn.commit()
         
         return {"success": True, "message": "User registered successfully"}
@@ -146,12 +155,10 @@ async def upload_contract(
         print(f"📄 文件名: {file.filename}")
         print(f"📄 文件类型: {file.content_type}")
         
-        # 验证文件类型
         if not file.filename.lower().endswith('.pdf'):
             print("❌ 文件类型错误: 不是PDF")
             raise HTTPException(status_code=400, detail="Only PDF files are allowed")
         
-        # 读取文件内容
         content = await file.read()
         print(f"📄 文件大小: {len(content)} bytes")
         
@@ -159,14 +166,15 @@ async def upload_contract(
             print("❌ 文件内容为空")
             raise HTTPException(status_code=400, detail="File is empty")
         
-        # 创建临时文件
+        # --- 修复 6 ---
+        # 修正了上一版本中意外引入的中文句号 (。) 语法错误
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+        # --- 结束修复 6 ---
             temp_file.write(content)
             temp_path = temp_file.name
         
         print(f"📁 临时文件路径: {temp_path}")
         
-        # 处理PDF并创建向量库
         print("🔄 开始处理PDF和创建向量库...")
         summary_data = create_user_vectorstore(tenant_id, temp_path)
         
@@ -174,7 +182,6 @@ async def upload_contract(
             print("❌ PDF处理返回None")
             raise HTTPException(status_code=500, detail="Failed to process PDF")
         
-        # 转换数据格式
         if hasattr(summary_data, 'dict'):
             summary_data = summary_data.dict()
         
@@ -191,9 +198,8 @@ async def upload_contract(
         print(f"❌ 上传处理失败: {e}")
         import traceback
         print(f"🔍 完整错误: {traceback.format_exc()}")
-        raise HTTPException(statuscode=500, detail=f"Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
     finally:
-        # 清理临时文件
         if temp_path and os.path.exists(temp_path):
             try:
                 os.unlink(temp_path)
@@ -212,15 +218,21 @@ async def chat_with_bot(
     try:
         print(f"💬 Chat request from {tenant_id}: {message}")
         
-        # 检查用户是否有向量库（即是否上传过PDF）
-        from llm3 import user_vector_store_exists
+        # --- 修复 4 ---
+        # 移除了 'from llm3 import user_vector_store_exists' 
+        # 因为它现在已经在文件顶部导入了
         has_vector_store = user_vector_store_exists(tenant_id)
+        # --- 结束修复 4 ---
+        
         print(f"📚 User {tenant_id} has vector store: {has_vector_store}")
         
         # 获取或创建聊天机器人实例
         if tenant_id not in chatbot_instances:
-            from llm3 import llm
+            # --- 修复 5 ---
+            # 移除了 'from llm3 import llm' 
+            # 因为 'llm' 实例现在已经在文件顶部导入了
             chatbot_instances[tenant_id] = TenantChatbot(llm, tenant_id)
+            # --- 结束修复 5 ---
             print(f"🆕 Created new chatbot instance for {tenant_id}")
         
         chatbot = chatbot_instances[tenant_id]
@@ -234,13 +246,16 @@ async def chat_with_bot(
         result = {
             "reply": response,
             "tenant_id": tenant_id,
-            "has_contract": has_vector_store  # 添加这个字段用于调试
+            "has_contract": has_vector_store
         }
         
         return result
         
     except Exception as e:
         print(f"❌ Error in /chat endpoint: {e}")
+        # 打印更详细的错误
+        import traceback
+        print(f"🔍 完整错误: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
 
 @app.post("/maintenance")
@@ -307,6 +322,9 @@ async def http_exception_handler(request, exc):
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
     print(f"🚨 Unhandled exception: {exc}")
+    # 打印更详细的错误
+    import traceback
+    print(f"🔍 完整错误: {traceback.format_exc()}")
     return JSONResponse(
         status_code=500,
         content={"success": False, "error": "Internal server error"}

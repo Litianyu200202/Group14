@@ -23,7 +23,7 @@ from langchain.memory import (
 # Utilities
 import shutil
 import psycopg2
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field # <-- 已确认 Pydantic 是正确的
 import hashlib
 import smtplib # <--- [NEW EMAIL/FEEDBACK FUNCTION]
 from email.message import EmailMessage # <--- [NEW EMAIL/FEEDBACK FUNCTION]
@@ -345,22 +345,10 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
         print(f"🔍 完整错误跟踪: {traceback.format_exc()}")
         return None
 
-# === 智能体与工具 (Agent & Tools) ===
-# ( ... 内部代码保持不变 ... )
-def calculate_rent_tool(query: str) -> str:
-    # ( ... 内部代码保持不变 ... )
-    nums = [int(x) for x in re.findall(r"\d+", query)]
-    if len(nums) >= 2:
-        monthly, months = nums[0], nums[1]
-        total = monthly * months
-        return f"💰 Estimated total rent for {months} months at ${monthly}/mo: **${total}**."
-    return "Please provide both the monthly rent and the number of months (e.g., '$2500 for 15 months')."
-calculate_rent = Tool.from_function(
-    func=calculate_rent_tool,
-    name="calculate_rent",
-    description="Calculate total rent given monthly rent and number of months from natural language."
-)
-print('🧰 Tool ready: calculate_rent')
+# --- [V3 修复: 删除全局工具] ---
+# 删除了旧的、全局的 'calculate_rent_tool' 和 'calculate_rent'
+# 因为我们将把它移入 TenantChatbot 类
+# --- [V3 结束删除] ---
 
 
 # === 自定义的 Psycopg2 聊天记录类 ===
@@ -437,10 +425,20 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
 # === 主聊天机器人 (The Main Chatbot) ===
 # ( ... 内部代码保持不变 ... )
 class TenantChatbot:
-    # ( ... 内部代码保持不变 ... )
+    
+    # --- [V3 修复 8] ---
+    # 添加一个实例变量来持有 RAG 链
+    rag_chain: Optional[RetrievalQA] = None
+    # --- [V3 结束 修复 8] ---
+
     def __init__(self, llm_instance, tenant_id: str):
         print(f"🌀 正在为租户 {tenant_id} 初始化 TenantChatbot 实例...")
         self.llm = llm_instance
+        # --- [V3 修复 9] ---
+        # 存储 tenant_id 以便工具访问
+        self.tenant_id = tenant_id 
+        # --- [V3 结束 修复 9] ---
+        
         self.history = Psycopg2ChatHistory(
             tenant_id=tenant_id, 
             db_url=DATABASE_URL 
@@ -451,9 +449,41 @@ class TenantChatbot:
             return_messages=True
         )
         self.conversation = ConversationChain(llm=self.llm, memory=self.memory)
-        self.tools = [calculate_rent] 
+        
+        # --- [V3 修复 10] ---
+        # 在 agent 之前初始化 RAG 链, 这样 "智能" 工具才能使用它
+        if user_vector_store_exists(self.tenant_id):
+            try:
+                vectorstore = Chroma(
+                    persist_directory=get_user_vector_store_path(self.tenant_id),
+                    embedding_function=embeddings
+                )
+                self.rag_chain = RetrievalQA.from_chain_type(
+                    llm=self.llm,
+                    chain_type="stuff",
+                    retriever=vectorstore.as_retriever(),
+                )
+                print(f"✅ 租户 {tenant_id} 的 RAG 链已准备就绪。")
+            except Exception as e:
+                print(f"⚠️ 租户 {tenant_id} 的 RAG 链初始化失败: {e}")
+                self.rag_chain = None
+        else:
+             print(f"ℹ️ 租户 {tenant_id} 尚无 RAG 向量库。")
+        # --- [V3 结束 修复 10] ---
+
+        # --- [V3 修复 11] ---
+        # 在 __init__ 内部定义工具, 以便它们可以访问 'self' (和 'self.rag_chain')
+        tools = [
+            Tool.from_function(
+                func=self._instance_calculate_rent, # <-- 使用新的实例方法
+                name="calculate_rent",
+                description="Calculate total rent. If only months are provided, it will try to find the monthly rent from the contract."
+            )
+        ]
+        # --- [V3 结束 修复 11] ---
+        
         self.agent = initialize_agent(
-            tools=self.tools,
+            tools=tools, # <-- 使用上面定义的 'tools'
             llm=self.llm,
             agent=AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
             memory=self.memory, 
@@ -472,49 +502,124 @@ class TenantChatbot:
              "2. Clause reference\n"
              "3. Source snippet")
         ])
+        
+        # --- 修复 7 ---
+        # 将 "contract", "lease", "agreement" 添加到关键词列表
         self.contract_keywords = [
+            'contract', 'lease', 'agreement', # <-- 已添加
             'clause', 'tenant', 'landlord', 'terminate', 'repair', 'deposit',
             'renewal', 'maintenance', 'aircon', 'breach', 'notice', 'early termination'
         ]
+        # --- 结束修复 7 ---
+        
         self.calc_keywords = ['calculate', 'rent', 'payment', 'fee', 'total']
         self.maintenance_keywords = ['maintenance', 'fix', 'broken', 'repair', 'leak', '报修']
         self.status_keywords = ['status', 'progress', 'check repair', '维修进度', '维修状态']
         print(f"✅ 租户 {tenant_id} 的 TenantChatbot 实例创建完毕 (使用永久记忆)。")
 
+    # --- [V3 修复 12] ---
+    # 这是新的 "智能" 工具, 它可以访问 'self'
+    def _instance_calculate_rent(self, query: str) -> str:
+        print(f"⚙️ 租金计算工具触发: {query}")
+        q_lower = query.lower()
+        # 从查询中提取所有数字
+        nums = [int(x) for x in re.findall(r"\d+", query.replace(',', ''))] # 移除逗号
+        
+        monthly_rent = None
+        months = None
+        
+        # 尝试从查询中解析数字
+        if len(nums) == 1:
+            # 只有一个数字，假设它是 "months"
+            months = nums[0]
+            print(f"🔍 解析到 {months} 个月。")
+        elif len(nums) >= 2:
+            # 假设第一个是租金, 第二个是月份 (这很粗糙, 但可以工作)
+            monthly_rent = nums[0]
+            months = nums[1]
+            print(f"🔍 解析到月租 ${monthly_rent}，共 {months} 个月。")
+
+        # 如果缺少月租 (monthly_rent)，尝试从 RAG 获取
+        if monthly_rent is None and self.rag_chain:
+            print("🌀 缺少月租，正在从合同中检索 (RAG)...")
+            try:
+                rag_query = "What is the monthly rent amount?"
+                response = self.rag_chain.invoke({"query": rag_query})
+                rag_result = response['result']
+                print(f"💡 RAG 结果: {rag_result}")
+                
+                # 再次从 RAG 结果中提取数字
+                rent_nums = [int(x) for x in re.findall(r"\d+", rag_result.replace(',', ''))] # 移除逗号
+                if rent_nums:
+                    monthly_rent = rent_nums[0] # 取第一个找到的数字
+                    print(f"✅ 从合同中成功提取月租: ${monthly_rent}")
+            except Exception as e:
+                print(f"❌ RAG 检索月租失败: {e}")
+        
+        # 最终计算
+        if monthly_rent and months:
+            total = monthly_rent * months
+            return f"💰 根据您的合同，月租为 ${monthly_rent}。 {months} 个月的总租金为: **${total}**。"
+        elif months:
+            # 即使 RAG 失败了, 也要给出一个有用的回复
+            return f"我从您的问题中得知您想计算 {months} 个月的租金，但我无法在您的合同中自动找到月租金额。您能提供一下吗？"
+        else:
+            return "请输入您想计算的月租和月数 (例如, '$2500 for 15 months' 或 '12 months')."
+    # --- [V3 结束 修复 12] ---
+
+
     def process_query(self, query: str, tenant_id: str) -> str:
         # ( ... 内部代码保持不变 ... )
         q = query.lower()
+        
         if any(k in q for k in self.maintenance_keywords) and not any(k in q for k in self.status_keywords) and 'clause' not in q:
             return "MAINTENANCE_REQUEST_TRIGGERED"
         if any(k in q for k in self.status_keywords):
             print(f"⚙️ 维修状态查询触发: {tenant_id}")
             return check_maintenance_status(tenant_id)
+        
+        # --- [V3 修复 13] ---
+        # 优先检查 "计算"
+        if any(k in q for k in self.calc_keywords) and self.agent:
+             print(f"⚙️ 租金计算 (Agent) 触发: {query}")
+             try:
+                response = self.agent.invoke({"input": query})
+                return response['output']
+             except Exception as e:
+                print(f"❌ Agent 执行失败: {e}")
+                return f'Agent 执行失败: {e}'
+        # --- [V3 结束 修复 13] ---
+
+        # 您的提问 ("...in my contract") 现在会匹配这一条
         if any(k in q for k in self.contract_keywords):
             print(f"⚙️ RAG triggered for tenant: {tenant_id}")
-            persist_directory = get_user_vector_store_path(tenant_id)
-            if not user_vector_store_exists(tenant_id):
-                return "我还没有您的租约文件。请先在侧边栏上传您的合同PDF。"
+            
+            # --- [V3 修复 14] ---
+            # 使用在 __init__ 中创建的 self.rag_chain
+            if not self.rag_chain:
+                # 即使 RAG 链不存在也要检查向量库, 以便给出正确的错误信息
+                if not user_vector_store_exists(tenant_id):
+                    return "我还没有您的租约文件。请先在侧边栏上传您的合同PDF。"
+                else:
+                    return "抱歉, 我在加载您的租约时遇到错误。请尝试重新上传。"
+            # --- [V3 结束 修复 14] ---
+            
             try:
-                vectorstore = Chroma(
-                    persist_directory=persist_directory,
-                    embedding_function=embeddings
-                )
-                qa_chain = RetrievalQA.from_chain_type(
-                    llm=self.llm,
-                    chain_type="stuff",
-                    retriever=vectorstore.as_retriever(),
-                )
-                response = qa_chain.invoke({"query": query})
+                response = self.rag_chain.invoke({"query": query})
                 return response['result']
             except Exception as e:
                 print(f"❌ RAG 动态链失败: {e}")
                 return "抱歉，我在检索您的租约时遇到错误。"
+        
+        # [多余的检查, 已被 V3 修复 13 覆盖, 但无害]
         if any(k in q for k in self.calc_keywords):
             try:
                 response = self.agent.invoke({"input": query})
                 return response['output']
             except Exception as e:
                 return f'Agent 执行失败: {e}'
+        
+        # 如果没有关键词匹配，它会来到这里
         try:
             response = self.conversation.invoke({"input": query})
             return response["response"]
