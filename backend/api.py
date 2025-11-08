@@ -12,7 +12,7 @@ import json
 try:
     # --- 修复 3 ---
     # 添加 llm 和 user_vector_store_exists 到主导入列表
-    from llm3 import (
+    from backend.llm3_new import (
         TenantChatbot, 
         create_user_vectorstore, 
         log_maintenance_request,
