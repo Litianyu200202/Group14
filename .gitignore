@@ -10,6 +10,7 @@ venv/
 
 # Chroma / vector store
 backend/vector_store/
+backend/vector_stores/
 
 # testing
 backend/test_script.py
