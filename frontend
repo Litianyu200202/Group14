@@ -14,27 +14,65 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# -------------------------
+# 💅 Classic Chat UI Styling
+# -------------------------
 st.markdown("""
 <style>
+body {
+    background-color: #f5f5f5; /* soft gray background */
+    font-family: 'Segoe UI', 'Helvetica', sans-serif;
+}
+
+/* Header */
 .main-header {
     font-size: 2.2rem;
     color: #2c3e50;
     text-align: center;
     margin-bottom: 1.5rem;
 }
+
+/* Chat bubbles */
 .chat-message {
-    padding: 1rem;
-    border-radius: 0.6rem;
+    padding: 0.9rem 1.1rem;
+    border-radius: 12px;
     margin: 0.5rem 0;
     line-height: 1.5;
+    max-width: 85%;
+    word-wrap: break-word;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
+
+/* User messages */
 .user-message {
-    background-color: #e3f2fd;
-    border-left: 4px solid #2196f3;
+    background-color: #e7f1fb;      /* soft light blue */
+    border: 1px solid #d0e3fa;
+    align-self: flex-end;
+    margin-left: auto;
 }
+
+/* Assistant messages */
 .assistant-message {
-    background-color: #f3e5f5;
-    border-left: 4px solid #9c27b0;
+    background-color: #ffffff;      /* clean white */
+    border: 1px solid #e0e0e0;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.04);
+    align-self: flex-start;
+    margin-right: auto;
+}
+
+/* Chat layout */
+div[data-testid="stVerticalBlock"] > div > div {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Subtle scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+::-webkit-scrollbar-thumb {
+    background-color: #d0d0d0;
+    border-radius: 4px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -75,11 +113,11 @@ with st.sidebar:
     st.header("🔧 Settings")
     st.markdown("---")
 
-    # 🧩 Login / Register switch
-    auth_mode = st.radio("Select an option", ["Login", "Register"], horizontal=True)
+    # 🧩 Login / Register toggle
+    auth_mode = st.radio("Select mode", ["Login", "Register"], horizontal=True)
 
     # -------------------------
-    # 🧑‍💻 Login Section
+    # 🧑‍💻 Login
     # -------------------------
     if auth_mode == "Login" and not st.session_state.logged_in:
         st.subheader("📧 Login with Email")
@@ -97,19 +135,19 @@ with st.sidebar:
                             st.success(f"✅ Welcome back, {user_data.get('name', 'User')} 👋")
                             st.rerun()
                         else:
-                            st.error("⚠️ Invalid response from the backend.")
+                            st.error("⚠️ Invalid response from backend.")
                     else:
-                        st.error("⚠️ User not found. Please verify your email or register first.")
+                        st.error("⚠️ User not found. Please check your email or register.")
                 except Exception as e:
-                    st.error(f"❌ Unable to connect to backend: {e}")
+                    st.error(f"❌ Could not connect to backend: {e}")
             else:
-                st.warning("Please provide your email before logging in.")
+                st.warning("Please enter your email before logging in.")
 
     # -------------------------
-    # 🆕 Registration Section
+    # 🆕 Register
     # -------------------------
     elif auth_mode == "Register" and not st.session_state.logged_in:
-        st.subheader("🆕 Register a New Account")
+        st.subheader("🆕 Register New Account")
         name = st.text_input("Full Name")
         email = st.text_input("Email (used as login ID)")
 
@@ -121,7 +159,7 @@ with st.sidebar:
                     if response.status_code == 200:
                         result = response.json()
                         if result.get("success", True):
-                            st.success("✅ Registration successful! Logging you in...")
+                            st.success("✅ Registration successful! Logging in...")
                             st.session_state.logged_in = True
                             st.session_state.user_info = {"user_id": email, "name": name}
                             st.rerun()
@@ -130,12 +168,12 @@ with st.sidebar:
                     else:
                         st.error("❌ Server error during registration.")
                 except Exception as e:
-                    st.error(f"❌ Unable to connect to backend: {e}")
+                    st.error(f"❌ Could not connect to backend: {e}")
             else:
-                st.warning("Please provide both your name and email.")
+                st.warning("Please fill in both name and email fields.")
 
     # -------------------------
-    # 👋 Logged-in Display
+    # 👋 Logged-in View
     # -------------------------
     elif st.session_state.logged_in:
         name = st.session_state.user_info.get("name", "User")
@@ -147,7 +185,7 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 📄 File Upload Section
+    # 📄 Upload Contract
     st.subheader("📄 Upload Contract PDF")
     uploaded_file = st.file_uploader("Select your tenancy agreement (PDF)", type=["pdf"])
 
@@ -161,13 +199,13 @@ with st.sidebar:
                     res = response.json()
                     summary = res.get("summary", {})
                     st.session_state.contract_summary = summary
-                    st.success("✅ Contract processed successfully!")
+                    st.success("✅ Contract successfully processed!")
                     st.markdown("#### 📘 Contract Summary:")
                     st.json(summary)
                 else:
                     st.error(f"⚠️ Upload failed: {response.status_code}")
             except Exception as e:
-                st.error(f"❌ Error while uploading: {e}")
+                st.error(f"❌ Error: {e}")
 
     st.markdown("---")
 
@@ -207,7 +245,7 @@ with st.sidebar:
                     }
                     r = requests.post(API_MAINTENANCE_URL, data=data)
                     if r.status_code == 200:
-                        st.success("✅ Maintenance request submitted successfully!")
+                        st.success("✅ Request submitted successfully!")
                         st.session_state.show_maintenance_form = False
                     else:
                         st.error("⚠️ Failed to submit maintenance request.")
@@ -257,19 +295,19 @@ if user_input or st.session_state.get("trigger_send", False):
             response = requests.post(API_CHAT_URL, data=payload, timeout=20)
             if response.status_code == 200:
                 data = response.json()
-                ai_reply = data.get("reply", "No response available.")
+                ai_reply = data.get("reply", "No response found.")
                 if ai_reply == "MAINTENANCE_REQUEST_TRIGGERED":
                     st.session_state.show_maintenance_form = True
-                    ai_reply = "🛠️ It looks like you need to report an issue. Please fill out the maintenance form on the sidebar."
+                    ai_reply = "🛠️ I understand you need to report an issue. Please fill out the maintenance form in the sidebar."
                 property_data = data.get("properties", None)
             else:
-                ai_reply = f"⚠️ Backend returned an error: {response.status_code}"
+                ai_reply = f"⚠️ Backend returned error: {response.status_code}"
                 property_data = None
         except Exception as e:
-            ai_reply = f"❌ Unable to connect to backend: {e}"
+            ai_reply = f"❌ Could not connect to backend: {e}"
             property_data = None
 
-    # Display assistant reply
+    # Display Assistant Response
     st.session_state.messages.append({"role": "assistant", "content": ai_reply})
     css_class = "assistant-message"
     st.markdown(f"""
@@ -278,7 +316,7 @@ if user_input or st.session_state.get("trigger_send", False):
     </div>
     """, unsafe_allow_html=True)
 
-    # 👍👎 Feedback Section
+    # 👍👎 Feedback
     col1, col2 = st.columns([1, 10])
     with col1:
         if st.button("👍", key=f"like_{user_input}"):
@@ -292,7 +330,7 @@ if user_input or st.session_state.get("trigger_send", False):
 
     with col2:
         if st.button("👎", key=f"dislike_{user_input}"):
-            user_comment = st.text_area("Please tell us how we can improve:", key=f"comment_{user_input}")
+            user_comment = st.text_area("Tell us how we can improve:", key=f"comment_{user_input}")
             if st.button("Submit Feedback", key=f"submit_{user_input}"):
                 requests.post(API_FEEDBACK_URL, data={
                     "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
@@ -301,9 +339,9 @@ if user_input or st.session_state.get("trigger_send", False):
                     "rating": -1,
                     "comment": user_comment
                 })
-                st.success("Thank you! Your feedback has been submitted.")
+                st.success("Thanks! Your feedback has been submitted.")
 
-    # Display property data if available
+    # Show property data if any
     if property_data:
         st.markdown("#### 🏘️ Recommended Properties:")
         try:
@@ -314,4 +352,3 @@ if user_input or st.session_state.get("trigger_send", False):
 
     time.sleep(0.3)
     st.rerun()
-
