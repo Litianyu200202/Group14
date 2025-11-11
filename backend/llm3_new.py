@@ -1,6 +1,7 @@
 # llm3_new.py
 from __future__ import annotations
 
+from chromadb.config import Settings
 import os
 import re
 import hashlib
@@ -316,10 +317,21 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = text_splitter.split_documents(docs)
 
-        # 创建并持久化向量库
+        ## 关闭 Chroma Telemetry，否则会出现 capture() 参数错误
+        client_settings = Settings(
+             anonymized_telemetry=False,
+             allow_reset=True,
+            )
+
+        os.makedirs(persist_directory, exist_ok=True)
+
         vectorstore = Chroma.from_documents(
-            documents=splits, embedding=embeddings, persist_directory=persist_directory
+            documents=splits,
+            embedding=embeddings,
+            persist_directory=persist_directory,
+            client_settings=client_settings
         )
+
         print(f"✅ 成功为 {tenant_id} 创建并持久化向量库。")
 
         # 合同摘要抽取（取前10段，避免过长）
@@ -559,6 +571,26 @@ class TenantChatbot:
             "breach",
             "notice",
             "early termination",
+            "rent increase",
+            "sublet",
+            "guarantee",
+            "furniture",
+            "utilities",
+            "rules",
+            "agreement",
+            "contract",
+            "lease",
+            "rental",
+            "payment",
+            "late fee",
+            "pets",
+            "responsibilities",
+            "obligations",
+            "rights",
+            "liabilities",
+            "dispute",
+            "jurisdiction",
+            "responsible"
         ]
         self.calc_keywords = ["calculate", "rent", "payment", "fee", "total"]
         self.maintenance_keywords = ["maintenance", "fix", "broken", "repair", "leak", "报修"]

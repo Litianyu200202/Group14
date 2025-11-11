@@ -36,31 +36,18 @@ st.markdown("""
     background-color: #f3e5f5;
     border-left: 4px solid #9c27b0;
 }
-.upload-section {
-    background-color: #f8f9fa;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    border: 2px dashed #dee2e6;
-}
-.auth-section {
-    background-color: #fff3cd;
-    padding: 1rem;
-    border-radius: 0.5rem;
-    border: 1px solid #ffeaa7;
-}
 </style>
 """, unsafe_allow_html=True)
 
 # -------------------------
 # 🌐 Backend API Endpoints
 # -------------------------
-API_BASE = "http://127.0.0.1:8000"
-API_CHAT_URL = f"{API_BASE}/chat"
-API_USER_URL = f"{API_BASE}/user"
-API_REGISTER_URL = f"{API_BASE}/register"
-API_UPLOAD_URL = f"{API_BASE}/upload"
-API_FEEDBACK_URL = f"{API_BASE}/feedback"
-API_MAINTENANCE_URL = f"{API_BASE}/maintenance"
+API_CHAT_URL = "http://127.0.0.1:8000/chat"
+API_USER_URL = "http://127.0.0.1:8000/user"
+API_REGISTER_URL = "http://127.0.0.1:8000/register"
+API_UPLOAD_URL = "http://127.0.0.1:8000/upload"
+API_FEEDBACK_URL = "http://127.0.0.1:8000/feedback"
+API_MAINTENANCE_URL = "http://127.0.0.1:8000/maintenance"
 
 # -------------------------
 # Initialize Session State
@@ -75,12 +62,6 @@ if "contract_summary" not in st.session_state:
     st.session_state.contract_summary = None
 if "show_maintenance_form" not in st.session_state:
     st.session_state.show_maintenance_form = False
-if "contract_uploaded" not in st.session_state:
-    st.session_state.contract_uploaded = False
-if "upload_success" not in st.session_state:
-    st.session_state.upload_success = False
-if "show_feedback_form" not in st.session_state:
-    st.session_state.show_feedback_form = False
 
 # -------------------------
 # 🏷️ Page Header
@@ -94,125 +75,242 @@ with st.sidebar:
     st.header("🔧 Settings")
     st.markdown("---")
 
-    # Authentication
-    st.markdown('<div class="auth-section">', unsafe_allow_html=True)
-    st.subheader("🔐 Authentication")
+    # 🧩 Login / Register switch
+    auth_mode = st.radio("Select an option", ["Login", "Register"], horizontal=True)
 
-    if not st.session_state.logged_in:
-        email = st.text_input("Enter your email address", key="login_email")
-        if st.button("Login", type="primary", key="login_btn", use_container_width=True):
-            try:
-                response = requests.get(API_USER_URL, params={"email": email}, timeout=10)
-                data = response.json()
-                if response.status_code == 200 and "user_id" in data:
-                    st.session_state.logged_in = True
-                    st.session_state.user_info = data
-                    st.success("✅ Login successful")
-                    st.rerun()
-                else:
-                    st.error("⚠️ User not found. Please register.")
-            except Exception as e:
-                st.error(f"❌ Could not connect to backend: {e}")
-    else:
-        st.success(f"👋 Welcome {st.session_state.user_info.get('name', 'User')}!")
-        if st.button("Logout", use_container_width=True):
-            st.session_state.clear()
+    # -------------------------
+    # 🧑‍💻 Login Section
+    # -------------------------
+    if auth_mode == "Login" and not st.session_state.logged_in:
+        st.subheader("📧 Login with Email")
+        email = st.text_input("Enter your email address")
+
+        if st.button("Login"):
+            if email:
+                try:
+                    response = requests.get(API_USER_URL, params={"email": email}, timeout=10)
+                    if response.status_code == 200:
+                        user_data = response.json()
+                        if "user_id" in user_data:
+                            st.session_state.user_info = user_data
+                            st.session_state.logged_in = True
+                            st.success(f"✅ Welcome back, {user_data.get('name', 'User')} 👋")
+                            st.rerun()
+                        else:
+                            st.error("⚠️ Invalid response from the backend.")
+                    else:
+                        st.error("⚠️ User not found. Please verify your email or register first.")
+                except Exception as e:
+                    st.error(f"❌ Unable to connect to backend: {e}")
+            else:
+                st.warning("Please provide your email before logging in.")
+
+    # -------------------------
+    # 🆕 Registration Section
+    # -------------------------
+    elif auth_mode == "Register" and not st.session_state.logged_in:
+        st.subheader("🆕 Register a New Account")
+        name = st.text_input("Full Name")
+        email = st.text_input("Email (used as login ID)")
+
+        if st.button("Register"):
+            if name and email:
+                try:
+                    payload = {"tenant_id": email, "user_name": name}
+                    response = requests.post(API_REGISTER_URL, data=payload, timeout=10)
+                    if response.status_code == 200:
+                        result = response.json()
+                        if result.get("success", True):
+                            st.success("✅ Registration successful! Logging you in...")
+                            st.session_state.logged_in = True
+                            st.session_state.user_info = {"user_id": email, "name": name}
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Registration failed — this email may already exist.")
+                    else:
+                        st.error("❌ Server error during registration.")
+                except Exception as e:
+                    st.error(f"❌ Unable to connect to backend: {e}")
+            else:
+                st.warning("Please provide both your name and email.")
+
+    # -------------------------
+    # 👋 Logged-in Display
+    # -------------------------
+    elif st.session_state.logged_in:
+        name = st.session_state.user_info.get("name", "User")
+        st.success(f"👋 Hello, {name}!")
+        if st.button("Logout"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
             st.rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("---")
 
-    # Upload Section
+    # 📄 File Upload Section
     st.subheader("📄 Upload Contract PDF")
-    st.markdown('<div class="upload-section">', unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("Select your tenancy agreement (PDF)", type=["pdf"])
 
-    uploaded_file = st.file_uploader("Choose PDF", type=["pdf"])
+    if uploaded_file and st.session_state.logged_in:
+        with st.spinner("📚 Processing your contract..."):
+            try:
+                files = {"file": uploaded_file.getvalue()}
+                data = {"tenant_id": st.session_state.user_info.get("user_id")}
+                response = requests.post(API_UPLOAD_URL, data=data, files={"file": uploaded_file})
+                if response.status_code == 200:
+                    res = response.json()
+                    summary = res.get("summary", {})
+                    st.session_state.contract_summary = summary
+                    st.success("✅ Contract processed successfully!")
+                    st.markdown("#### 📘 Contract Summary:")
+                    st.json(summary)
+                else:
+                    st.error(f"⚠️ Upload failed: {response.status_code}")
+            except Exception as e:
+                st.error(f"❌ Error while uploading: {e}")
 
-    if uploaded_file:
-        if st.button("🚀 Upload and Process", type="primary", use_container_width=True):
-            tenant_id = st.session_state.user_info.get("user_id", "Guest")
-            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), "application/pdf")}
-            data = {"tenant_id": tenant_id}
-            res = requests.post(API_UPLOAD_URL, data=data, files=files)
-            if res.status_code == 200:
-                st.session_state.contract_summary = res.json().get("summary")
-                st.session_state.contract_uploaded = True
-                st.success("✅ Upload Success!")
-                st.rerun()
-            else:
-                st.error("❌ Upload Failed")
+    st.markdown("---")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    # 🧹 Clear Chat
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state.messages = []
+        st.success("Chat history cleared!")
+
+    st.markdown("---")
+
+    # 💡 Sample Questions
+    st.write("💡 Example Questions:")
+    if st.button("Who maintains the air conditioner?"):
+        st.session_state.messages.append({"role": "user", "content": "Who maintains the air conditioner?"})
+        st.session_state.trigger_send = True
+        st.rerun()
+    if st.button("Can I terminate the lease early?"):
+        st.session_state.messages.append({"role": "user", "content": "Can I terminate the lease early?"})
+        st.session_state.trigger_send = True
+        st.rerun()
+
+    st.markdown("---")
+
+    # 🛠️ Maintenance Request Form
+    if st.session_state.get("show_maintenance_form", False):
+        st.subheader("🛠️ Submit Maintenance Request")
+        with st.form("maintenance_form"):
+            location = st.text_input("Issue location (e.g., kitchen, air conditioner)")
+            description = st.text_area("Describe the issue (e.g., water leakage, power outage)")
+            submitted = st.form_submit_button("Submit")
+            if submitted:
+                try:
+                    data = {
+                        "tenant_id": st.session_state.user_info.get("user_id"),
+                        "location": location,
+                        "description": description
+                    }
+                    r = requests.post(API_MAINTENANCE_URL, data=data)
+                    if r.status_code == 200:
+                        st.success("✅ Maintenance request submitted successfully!")
+                        st.session_state.show_maintenance_form = False
+                    else:
+                        st.error("⚠️ Failed to submit maintenance request.")
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+
+# -------------------------
+# 📘 Show Contract Summary
+# -------------------------
+if st.session_state.contract_summary:
+    st.markdown("### 📄 Your Contract Summary")
+    st.json(st.session_state.contract_summary)
     st.markdown("---")
 
 # -------------------------
-# 💬 Chat Display
+# 💬 Display Chat History
 # -------------------------
-chat_container = st.container()
-with chat_container:
-    for msg in st.session_state.messages:
-        css_class = "user-message" if msg["role"] == "user" else "assistant-message"
-        speaker = "👤 You" if msg["role"] == "user" else "🤖 Assistant"
-        st.markdown(f"""
-        <div class="chat-message {css_class}">
-            <strong>{speaker}:</strong><br>{msg["content"]}
-        </div>
-        """, unsafe_allow_html=True)
+for msg in st.session_state.messages:
+    css_class = "user-message" if msg["role"] == "user" else "assistant-message"
+    speaker = "👤 You" if msg["role"] == "user" else "🤖 Assistant"
+    st.markdown(f"""
+    <div class="chat-message {css_class}">
+        <strong>{speaker}:</strong><br>{msg["content"]}
+    </div>
+    """, unsafe_allow_html=True)
 
 # -------------------------
 # 💬 Chat Input
 # -------------------------
 user_input = st.chat_input("Type your message here...")
-if user_input:
+
+# -------------------------
+# 🚀 Send Logic
+# -------------------------
+if user_input or st.session_state.get("trigger_send", False):
+    if not user_input and st.session_state.get("trigger_send", False):
+        user_input = st.session_state.messages[-1]["content"]
+        st.session_state.trigger_send = False
     st.session_state.messages.append({"role": "user", "content": user_input})
-    tenant_id = st.session_state.user_info.get("user_id", "Guest")
-    res = requests.post(API_CHAT_URL, data={"tenant_id": tenant_id, "message": user_input})
-    reply = res.json().get("reply", "⚠️ No response")
-    st.session_state.messages.append({"role": "assistant", "content": reply})
-    st.rerun()
 
-# -------------------------
-# 👍👎 Feedback Section (FIXED)
-# -------------------------
-if len(st.session_state.messages) >= 2:
-    last_ai = next((m for m in reversed(st.session_state.messages) if m["role"]=="assistant"), None)
-    last_user = next((m for m in reversed(st.session_state.messages) if m["role"]=="user"), None)
-
-    st.markdown("---")
-    st.write("**Was this helpful?**")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("👍 Yes"):
-            res = requests.post(API_FEEDBACK_URL, data={
+    with st.spinner("🤔 Thinking..."):
+        try:
+            payload = {
                 "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
-                "query": last_user["content"],
-                "response": last_ai["content"],
-                "rating": 1,
-            })
-            if res.status_code == 200 and res.json().get("success"):
-                st.success("✅ Thanks for your feedback!")
+                "message": user_input
+            }
+            response = requests.post(API_CHAT_URL, data=payload, timeout=20)
+            if response.status_code == 200:
+                data = response.json()
+                ai_reply = data.get("reply", "No response available.")
+                if ai_reply == "MAINTENANCE_REQUEST_TRIGGERED":
+                    st.session_state.show_maintenance_form = True
+                    ai_reply = "🛠️ It looks like you need to report an issue. Please fill out the maintenance form on the sidebar."
+                property_data = data.get("properties", None)
             else:
-                st.error("❌ Failed to send feedback")
+                ai_reply = f"⚠️ Backend returned an error: {response.status_code}"
+                property_data = None
+        except Exception as e:
+            ai_reply = f"❌ Unable to connect to backend: {e}"
+            property_data = None
+
+    # Display assistant reply
+    st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+    css_class = "assistant-message"
+    st.markdown(f"""
+    <div class="chat-message {css_class}">
+        <strong>🤖 Assistant:</strong><br>{ai_reply}
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 👍👎 Feedback Section
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        if st.button("👍", key=f"like_{user_input}"):
+            requests.post(API_FEEDBACK_URL, data={
+                "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
+                "query": user_input,
+                "response": ai_reply,
+                "rating": 1
+            })
+            st.success("Thank you for your feedback!")
 
     with col2:
-        if st.button("👎 No"):
-            st.session_state.show_feedback_form = True
+        if st.button("👎", key=f"dislike_{user_input}"):
+            user_comment = st.text_area("Please tell us how we can improve:", key=f"comment_{user_input}")
+            if st.button("Submit Feedback", key=f"submit_{user_input}"):
+                requests.post(API_FEEDBACK_URL, data={
+                    "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
+                    "query": user_input,
+                    "response": ai_reply,
+                    "rating": -1,
+                    "comment": user_comment
+                })
+                st.success("Thank you! Your feedback has been submitted.")
 
-if st.session_state.show_feedback_form:
-    st.subheader("💬 Help us improve")
-    comment = st.text_area("What was wrong?")
-    if st.button("Submit"):
-        res = requests.post(API_FEEDBACK_URL, data={
-            "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
-            "query": last_user["content"],
-            "response": last_ai["content"],
-            "rating": -1,
-            "comment": comment
-        })
-        if res.status_code == 200 and res.json().get("success"):
-            st.success("✅ Thank you!")
-        else:
-            st.error("❌ Failed to send feedback")
-        st.session_state.show_feedback_form = False
-        st.rerun()
+    # Display property data if available
+    if property_data:
+        st.markdown("#### 🏘️ Recommended Properties:")
+        try:
+            df = pd.DataFrame(property_data)
+            st.dataframe(df)
+        except Exception:
+            st.write(property_data)
+
+    time.sleep(0.3)
+    st.rerun()
