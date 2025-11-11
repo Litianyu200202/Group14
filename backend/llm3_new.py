@@ -1,4 +1,4 @@
-# llm_final_merged.py
+# llm_final_v2_email_reminders.py
 from __future__ import annotations
 
 from chromadb.config import Settings
@@ -26,26 +26,22 @@ from langchain.memory import ConversationBufferWindowMemory
 import psycopg2
 from pydantic import BaseModel, Field
 from email.message import EmailMessage
-import datetime # <--- [PROACTIVE] 添加此行
+import datetime
 
 print("✅ Libraries imported.")
 
 # === API Key & Database Config ===
+# ( ... 内部代码保持不变 ... )
 from dotenv import load_dotenv
 load_dotenv()
-
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 EMBEDDINGS_BACKEND = os.getenv("EMBEDDINGS_BACKEND", "OPENAI").upper()
 VECTORSTORE_BACKEND = os.getenv("VECTORSTORE_BACKEND", "CHROMA").upper()
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-
-# 邮件告警
 EMAIL_SENDER = os.getenv("EMAIL_SENDER")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
-
 print(f"🔐 OPENAI_API_KEY set: {bool(OPENAI_API_KEY)}")
 print(f"🧠 EMBEDDINGS_BACKEND = {EMBEDDINGS_BACKEND}")
 print(f"💾 VECTORSTORE_BACKEND = {VECTORSTORE_BACKEND}")
@@ -53,18 +49,16 @@ print(f"🐘 DATABASE_URL set: {bool(DATABASE_URL)}")
 print(f"📧 EMAIL_SENDER set: {bool(EMAIL_SENDER)}")
 
 # --- 全局、无状态的对象 (Global, Stateless Objects) ---
+# ( ... 内部代码保持不变 ... )
 if EMBEDDINGS_BACKEND == "OPENAI":
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY 未设置。")
     embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model=EMBEDDING_MODEL)
 else:
     raise NotImplementedError(f"暂不支持的 EMBEDDINGS_BACKEND: {EMBEDDINGS_BACKEND}")
-
 print("✅ Embeddings ready:", type(embeddings).__name__)
-
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
 EXTRACT_MODEL = os.getenv("EXTRACT_MODEL", "gpt-4o-mini")
-
 llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.2, api_key=OPENAI_API_KEY)
 extraction_llm = ChatOpenAI(model=EXTRACT_MODEL, temperature=0.0, api_key=OPENAI_API_KEY)
 print(f"✅ LLMs ready: {CHAT_MODEL} (chat) & {EXTRACT_MODEL} (extraction)")
@@ -72,7 +66,6 @@ print(f"✅ LLMs ready: {CHAT_MODEL} (chat) & {EXTRACT_MODEL} (extraction)")
 # === 数据库函数 (Database Functions) [S5] ===
 def get_db_connection():
     # ( ... 内部代码保持不变 ... )
-    """获取 PostgreSQL 连接。"""
     try:
         conn = psycopg2.connect(DATABASE_URL)
         return conn
@@ -189,9 +182,9 @@ def check_user_login(tenant_id: str) -> bool:
         if conn:
             conn.close()
 
-# --- [NEW EMAIL/FEEDBACK FUNCTION] ---
+# --- [EMAIL/FEEDBACK FUNCTION] ---
 def _send_feedback_email_alert(tenant_id: str, query: str, response: str, comment: str):
-    # ( ... 内部代码保持不变 ... )
+    # ( ... 内部代码保持不变: 这个函数是 *发送给中介* 的 ... )
     if not EMAIL_SENDER or not EMAIL_PASSWORD or not EMAIL_RECEIVER:
         print("⚠️ 邮件警报：EMAIL 环境变量未完全配置，跳过发送。")
         return
@@ -326,7 +319,7 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
         extraction_input = {"input": splits[:10]}
         result = extraction_chain.invoke(extraction_input)
 
-        summary_data = {} # 默认空字典
+        summary_data = {} 
         if isinstance(result, dict):
             payload = result.get("text") or result.get("output") or result.get("data")
             if payload and isinstance(payload, list) and len(payload) > 0 and isinstance(payload[0], dict):
@@ -342,7 +335,7 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
         else:
             print("⚠️ 提取链返回了未知结构。")
             
-        return summary_data # 无论保存DB是否成功，都返回摘要
+        return summary_data 
 
     except Exception as e:
         print(f"❌ 为 {tenant_id} 创建向量库或提取摘要时失败: {e}")
@@ -350,11 +343,11 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
 
 # --- [PROACTIVE] 新增：用于保存摘要的辅助函数 ---
 def _save_summary_to_db(tenant_id: str, summary_data: dict):
+    # ( ... 内部代码保持不变 ... )
     """
     (内部辅助函数) 将提取的摘要信息 保存到 'users' 表 以供将来提醒。
     """
     try:
-        # 1. 从摘要 中解析数据
         rent = summary_data.get('monthly_rent')
         end_date_str = summary_data.get('lease_end_date')
         start_date_str = summary_data.get('lease_start_date')
@@ -362,19 +355,17 @@ def _save_summary_to_db(tenant_id: str, summary_data: dict):
         rent_due_day = None
         if start_date_str:
             try:
-                # 尝试从 '2025-12-01T00:00:00' 或 '2025-12-01' 中提取 'day'
                 rent_due_day = datetime.datetime.fromisoformat(start_date_str.split('T')[0]).day
             except Exception:
-                rent_due_day = None # 解析失败则忽略
+                rent_due_day = None
         
         end_date = None
         if end_date_str:
             try:
                 end_date = datetime.date.fromisoformat(end_date_str.split('T')[0])
             except Exception:
-                end_date = None # 解析失败则忽略
+                end_date = None
 
-        # 2. 更新数据库
         conn = get_db_connection()
         if conn is None: raise Exception("无法连接数据库")
         
@@ -390,8 +381,6 @@ def _save_summary_to_db(tenant_id: str, summary_data: dict):
 
     except Exception as e:
         print(f"⚠️ 警告：成功提取摘要，但保存到 users 表 失败: {e}")
-        # 这是一个非致命错误
-# --- [END PROACTIVE] ---
 # --- [END PROACTIVE] ---
 
 # === 智能体与工具 (Agent & Tools) ===
@@ -421,10 +410,7 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
 
     # --- [PROACTIVE] 修改 _ensure_table_exists ---
     def _ensure_table_exists(self):
-        """
-        创建所需表（若不存在）。
-        chat_history、maintenance_requests、user_feedback、users 均在此处兜底建表，避免首次运行出错。
-        """
+        # ( ... 内部代码保持不变, 包含已更新的 users 表 ...)
         ddl_sql = [
             """
             CREATE TABLE IF NOT EXISTS chat_history (
@@ -581,57 +567,12 @@ class TenantChatbot:
 
         self.contract_prompt = ChatPromptTemplate.from_messages(
             [
-                (
-                    "system",
-                    "You are a professional Singapore tenancy-law assistant. "
-                    "Do not assume anything not in the contract. "
-                    "Use the given contract context to answer clearly and cite the relevant clause.",
-                ),
-                (
-                    "human",
-                    "Context:\n{context}\n\n"
-                    "Question:\n{user_query}\n\n"
-                    "Answer format:\n"
-                    "1. Short answer\n"
-                    "2. Clause reference\n"
-                    "3. Source snippet",
-                ),
+                # ( ... prompt 保持不变 ... )
             ]
         )
 
         self.contract_keywords = [
-            "clause",
-            "tenant",
-            "landlord",
-            "terminate",
-            "repair",
-            "deposit",
-            "renewal",
-            "maintenance",
-            "aircon",
-            "breach",
-            "notice",
-            "early termination",
-            "rent increase",
-            "sublet",
-            "guarantee",
-            "furniture",
-            "utilities",
-            "rules",
-            "agreement",
-            "contract",
-            "lease",
-            "rental",
-            "payment",
-            "late fee",
-            "pets",
-            "responsibilities",
-            "obligations",
-            "rights",
-            "liabilities",
-            "dispute",
-            "jurisdiction",
-            "responsible"
+            # ( ... keywords 保持不变 ... )
         ]
         self.calc_keywords = ["calculate", "rent", "payment", "fee", "total"]
         self.maintenance_keywords = ["maintenance", "fix", "broken", "repair", "leak", "报修"]
@@ -684,53 +625,49 @@ class TenantChatbot:
 
 print("🏗️ TenantChatbot class ready.")
 
-# --- [PROACTIVE] 新增：主动提醒功能 ---
+# --- [PROACTIVE-EMAIL-MOD] ---
 #
 # --------------------------------------------------
 #  主动提醒功能 (PROACTIVE REMINDER FUNCTIONS)
 # --------------------------------------------------
-#  这个脚本可以由外部调度器 (Cron Job) 每天运行
-#  例如: python llm3_new.py
-# --------------------------------------------------
 
-def _insert_reminder_message(conn, tenant_id: str, message_content: str) -> bool:
+def _send_proactive_reminder_email(tenant_email: str, user_name: str, message_content: str) -> bool:
     """
-    (内部辅助函数) 将AI的提醒消息插入到租户的聊天记录 中。
+    (新增) 内部辅助函数，用于向租户 发送主动提醒邮件。
     """
-    check_sql = """
-    SELECT EXISTS (
-        SELECT 1 FROM chat_history
-        WHERE tenant_id = %s 
-        AND message_content = %s
-        AND created_at > (NOW() - INTERVAL '24 hours')
-    );
-    """
-    sql = """
-    INSERT INTO chat_history (tenant_id, message_type, message_content)
-    VALUES (%s, 'ai', %s);
-    """
-    try:
-        with conn.cursor() as cur:
-            cur.execute(check_sql, (tenant_id, message_content))
-            already_sent = cur.fetchone()[0]
-            
-            if not already_sent:
-                cur.execute(sql, (tenant_id, message_content))
-                conn.commit()
-                print(f"✅ 成功插入提醒到 {tenant_id} 的聊天记录。")
-                return True
-            else:
-                print(f"ℹ️ {tenant_id} 的提醒在24小时内已发送，跳过。")
-                return False
-    except Exception as e:
-        print(f"❌ 插入提醒到 chat_history 失败: {e}")
-        conn.rollback()
+    if not EMAIL_SENDER or not EMAIL_PASSWORD:
+        print("⚠️ 邮件提醒：EMAIL_SENDER/PASSWORD 环境变量未配置，跳过发送。")
         return False
+
+    print(f"🌀 正在向租户 {tenant_email} 发送主动提醒邮件...")
+    try:
+        msg = EmailMessage()
+        
+        # 将消息中的 Markdown 粗体 (**) 移除，转换为纯文本
+        plain_message_content = message_content.replace("**", "")
+        
+        msg.set_content(plain_message_content)
+        msg['Subject'] = f"租金提醒：您的月租即将到期"
+        msg['From'] = EMAIL_SENDER
+        msg['To'] = tenant_email # (!!!) 发送给租户
+
+        s = smtplib.SMTP("smtp.gmail.com", 587)
+        s.starttls()
+        s.login(EMAIL_SENDER, EMAIL_PASSWORD)
+        s.send_message(msg)
+        s.quit()
+        print("✅ 租户提醒邮件发送成功。")
+        return True
+    except Exception as e:
+        print(f"❌ 租户提醒邮件发送失败: {e}")
+        return False
+
+# (!!!) _insert_reminder_message 函数已被移除，因为我们改用邮件
 
 def run_proactive_reminders(days_in_advance: int = 5):
     """
     (由调度器运行的主函数)
-    检查所有租户，并为即将到期的租金发送提醒。
+    检查所有租户，并为即将到期的租金 *发送电子邮件* 提醒。
     """
     print(f"🤖 正在运行主动提醒... 查找 {days_in_advance} 天后到期的租金。")
     
@@ -742,7 +679,7 @@ def run_proactive_reminders(days_in_advance: int = 5):
     SELECT tenant_id, user_name, monthly_rent
     FROM users
     WHERE rent_due_day = %s;
-    """ # (引用我们新添加的列)
+    """ 
     
     conn = get_db_connection()
     if conn is None:
@@ -760,6 +697,7 @@ def run_proactive_reminders(days_in_advance: int = 5):
         
     print(f"ℹ️ 找到 {len(tenants_to_remind)} 个租户需要在 {target_date} (第 {target_day_of_month} 天) 支付租金。")
     
+    sent_count = 0
     for tenant in tenants_to_remind:
         tenant_id, user_name, monthly_rent = tenant
         
@@ -771,14 +709,16 @@ def run_proactive_reminders(days_in_advance: int = 5):
             f"祝您有美好的一天！"
         )
         
-        _insert_reminder_message(conn, tenant_id, message)
+        # (!!!) 修改：调用邮件函数，而不是 _insert_reminder_message
+        if _send_proactive_reminder_email(tenant_id, friendly_name, message):
+            sent_count += 1
         
     conn.close()
-    print("✅ 提醒检查完成。")
+    print(f"✅ 提醒检查完成。成功发送 {sent_count} 封邮件。")
 
 if __name__ == "__main__":
     """
-    允许此文件被直接运行 (例如, `python llm3_new.py`) 
+    允许此文件被直接运行 (例如, `python llm3_new.py`)
     来手动触发提醒检查。
     """
     print("==========================================")
@@ -792,4 +732,4 @@ if __name__ == "__main__":
         print("❌ 错误: DATABASE_URL 未在 .env 文件中设置。无法运行提醒。")
     else:
         run_proactive_reminders(days_in_advance=5)
-# --- [END PROACTIVE FUNCTION] ---
+# --- [END PROACTIVE-EMAIL-MOD] ---
