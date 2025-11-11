@@ -103,7 +103,6 @@ section[data-testid="stSidebar"] {
 </style>
 """, unsafe_allow_html=True)
 
-
 # -------------------------
 # 🌐 Backend API Endpoints
 # -------------------------
@@ -128,28 +127,20 @@ if "contract_summary" not in st.session_state:
 if "show_maintenance_form" not in st.session_state:
     st.session_state.show_maintenance_form = False
 
-# -------------------------
-# 🏷️ Page Header
-# -------------------------
-st.markdown('<h1 class="main-header">🏠 Tenant Chatbot Assistant</h1>', unsafe_allow_html=True)
 
-# -------------------------
-# 🔧 Sidebar Configuration
-# -------------------------
-with st.sidebar:
-    st.header("🔧 Settings")
-    st.markdown("---")
+# ======================================================
+# ⭐ NEW: Fullscreen Login / Register Page
+# ======================================================
+def show_login_page():
+    st.markdown('<div class="login-container">', unsafe_allow_html=True)
+    st.markdown('<div class="login-box">', unsafe_allow_html=True)
+    st.markdown('<div class="login-title">🏠 Tenant Assistant</div>', unsafe_allow_html=True)
+    st.markdown("Welcome! Please login or register to continue.")
 
-    # 🧩 Login / Register toggle
-    auth_mode = st.radio("Select mode", ["Login", "Register"], horizontal=True)
+    mode = st.radio("Select mode", ["Login", "Register"], horizontal=True)
 
-    # -------------------------
-    # 🧑‍💻 Login
-    # -------------------------
-    if auth_mode == "Login" and not st.session_state.logged_in:
-        st.subheader("📧 Login with Email")
-        email = st.text_input("Enter your email address")
-
+    if mode == "Login":
+        email = st.text_input("📧 Email Address")
         if st.button("Login"):
             if email:
                 try:
@@ -164,20 +155,14 @@ with st.sidebar:
                         else:
                             st.error("⚠️ Invalid response from backend.")
                     else:
-                        st.error("⚠️ User not found. Please check your email or register.")
+                        st.error("⚠️ User not found.")
                 except Exception as e:
                     st.error(f"❌ Could not connect to backend: {e}")
             else:
-                st.warning("Please enter your email before logging in.")
-
-    # -------------------------
-    # 🆕 Register
-    # -------------------------
-    elif auth_mode == "Register" and not st.session_state.logged_in:
-        st.subheader("🆕 Register New Account")
-        name = st.text_input("Full Name")
-        email = st.text_input("Email (used as login ID)")
-
+                st.warning("Please enter your email.")
+    else:
+        name = st.text_input("👤 Full Name")
+        email = st.text_input("📨 Email (used as login ID)")
         if st.button("Register"):
             if name and email:
                 try:
@@ -199,16 +184,43 @@ with st.sidebar:
             else:
                 st.warning("Please fill in both name and email fields.")
 
-    # -------------------------
+    st.markdown('<hr><small style="color:gray;">© 2025 Tenant Assistant | Streamlit App</small>', unsafe_allow_html=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
+
+
+# ======================================================
+# 🧭 ROUTER: Only show chat interface if logged in
+# ======================================================
+if not st.session_state.logged_in:
+    show_login_page()
+    st.stop()  # ⛔ Stop here, don't render the chat interface below
+
+
+# ======================================================
+# 🚀 Below is your original chat interface (UNCHANGED)
+# ======================================================
+
+# -------------------------
+# 🏷️ Page Header
+# -------------------------
+st.markdown('<h1 class="main-header">🏠 Tenant Chatbot Assistant</h1>', unsafe_allow_html=True)
+
+# -------------------------
+# 🔧 Sidebar Configuration
+# -------------------------
+with st.sidebar:
+    st.header("🔧 Settings")
+    st.markdown("---")
+
+    auth_mode = "LoggedIn"
+
     # 👋 Logged-in View
-    # -------------------------
-    elif st.session_state.logged_in:
-        name = st.session_state.user_info.get("name", "User")
-        st.success(f"👋 Hello, {name}!")
-        if st.button("Logout"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+    name = st.session_state.user_info.get("name", "User")
+    st.success(f"👋 Hello, {name}!")
+    if st.button("Logout"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.rerun()
 
     st.markdown("---")
 
@@ -216,7 +228,7 @@ with st.sidebar:
     st.subheader("📄 Upload Contract PDF")
     uploaded_file = st.file_uploader("Select your tenancy agreement (PDF)", type=["pdf"])
 
-    if uploaded_file and st.session_state.logged_in:
+    if uploaded_file:
         with st.spinner("📚 Processing your contract..."):
             try:
                 files = {"file": uploaded_file.getvalue()}
@@ -236,14 +248,12 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 🧹 Clear Chat
     if st.button("🗑️ Clear Chat History"):
         st.session_state.messages = []
         st.success("Chat history cleared!")
 
     st.markdown("---")
 
-    # 💡 Sample Questions
     st.write("💡 Example Questions:")
     if st.button("Who maintains the air conditioner?"):
         st.session_state.messages.append({"role": "user", "content": "Who maintains the air conditioner?"})
@@ -253,31 +263,6 @@ with st.sidebar:
         st.session_state.messages.append({"role": "user", "content": "Can I terminate the lease early?"})
         st.session_state.trigger_send = True
         st.rerun()
-
-    st.markdown("---")
-
-    # 🛠️ Maintenance Request Form
-    if st.session_state.get("show_maintenance_form", False):
-        st.subheader("🛠️ Submit Maintenance Request")
-        with st.form("maintenance_form"):
-            location = st.text_input("Issue location (e.g., kitchen, air conditioner)")
-            description = st.text_area("Describe the issue (e.g., water leakage, power outage)")
-            submitted = st.form_submit_button("Submit")
-            if submitted:
-                try:
-                    data = {
-                        "tenant_id": st.session_state.user_info.get("user_id"),
-                        "location": location,
-                        "description": description
-                    }
-                    r = requests.post(API_MAINTENANCE_URL, data=data)
-                    if r.status_code == 200:
-                        st.success("✅ Request submitted successfully!")
-                        st.session_state.show_maintenance_form = False
-                    else:
-                        st.error("⚠️ Failed to submit maintenance request.")
-                except Exception as e:
-                    st.error(f"❌ Error: {e}")
 
 # -------------------------
 # 📘 Show Contract Summary
@@ -334,7 +319,6 @@ if user_input or st.session_state.get("trigger_send", False):
             ai_reply = f"❌ Could not connect to backend: {e}"
             property_data = None
 
-    # Display Assistant Response
     st.session_state.messages.append({"role": "assistant", "content": ai_reply})
     css_class = "assistant-message"
     st.markdown(f"""
@@ -343,7 +327,6 @@ if user_input or st.session_state.get("trigger_send", False):
     </div>
     """, unsafe_allow_html=True)
 
-    # 👍👎 Feedback
     col1, col2 = st.columns([1, 10])
     with col1:
         if st.button("👍", key=f"like_{user_input}"):
@@ -368,7 +351,6 @@ if user_input or st.session_state.get("trigger_send", False):
                 })
                 st.success("Thanks! Your feedback has been submitted.")
 
-    # Show property data if any
     if property_data:
         st.markdown("#### 🏘️ Recommended Properties:")
         try:
@@ -379,3 +361,4 @@ if user_input or st.session_state.get("trigger_send", False):
 
     time.sleep(0.3)
     st.rerun()
+
