@@ -5,9 +5,6 @@
 uvicorn backend.api:app --reload
 在另一个命令行中输入 streamlit run steeamlit_UI.py即可使用我们的tenant chatbot
 
-这是一个非常好的主意。为 `llm2.py` 准备一个清晰的README总结，可以让您的前端和数据库同学（以及您自己）的工作效率大大提高。
-
-
 
 -----
 
