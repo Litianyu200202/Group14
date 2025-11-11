@@ -551,10 +551,15 @@ class TenantChatbot:
     def __init__(self, llm_instance, tenant_id: str):
         print(f"🌀 正在为租户 {tenant_id} 初始化 TenantChatbot 实例...")
         self.llm = llm_instance
+        self.tenant_id = tenant_id
+
         self.history = Psycopg2ChatHistory(tenant_id=tenant_id, db_url=DATABASE_URL)
         self.memory = ConversationBufferWindowMemory(
-            chat_memory=self.history, k=10, return_messages=True
+            chat_memory=self.history,
+            k=10,
+            return_messages=True
         )
+
         self.conversation = ConversationChain(llm=self.llm, memory=self.memory)
         self.tools = [calculate_rent]
         self.agent = initialize_agent(
@@ -577,6 +582,7 @@ class TenantChatbot:
         self.calc_keywords = ["calculate", "rent", "payment", "fee", "total"]
         self.maintenance_keywords = ["maintenance", "fix", "broken", "repair", "leak", "报修"]
         self.status_keywords = ["status", "progress", "check repair", "维修进度", "维修状态"]
+
         print(f"✅ 租户 {tenant_id} 的 TenantChatbot 实例创建完毕 (使用永久记忆)。")
 
     def process_query(self, query: str, tenant_id: str) -> str:
@@ -588,34 +594,43 @@ class TenantChatbot:
             return "MAINTENANCE_REQUEST_TRIGGERED"
 
         if any(k in q for k in self.status_keywords):
-            print(f"⚙️ 维修状态查询触发: {tenant_id}")
             return check_maintenance_status(tenant_id)
 
         if any(k in q for k in self.contract_keywords):
-            print(f"⚙️ RAG triggered for tenant: {tenant_id}")
             persist_directory = get_user_vector_store_path(tenant_id)
+
             if not user_vector_store_exists(tenant_id):
-                return "我还没有您的租约文件。请先在侧边栏上传您的合同PDF。"
+                return "我还没有您的租约文件，请先上传合同 PDF。"
+
             try:
                 vectorstore = Chroma(
-                    persist_directory=persist_directory, embedding_function=embeddings
+                    persist_directory=persist_directory,
+                    embedding_function=embeddings
                 )
                 retriever = vectorstore.as_retriever()
-                qa_chain = RetrievalQA.from_chain_type(
-                    llm=self.llm, chain_type="stuff", retriever=retriever
+                docs = retriever.get_relevant_documents(query)
+
+                # ✅ 正确提取文档文本，而不是 Document 对象
+                context_text = "\n\n---\n\n".join([d.page_content for d in docs])
+
+                prompt = self.contract_prompt.format(
+                    context=context_text,
+                    user_query=query
                 )
-                response = qa_chain.invoke({"query": query})
-                return response["result"]
+
+                response = self.llm.invoke(prompt)
+                return response.content
+
             except Exception as e:
-                print(f"❌ RAG 动态链失败: {e}")
-                return "抱歉，我在检索您的租约时遇到错误。"
+                print(f"❌ RAG 查询失败: {e}")
+                return "抱歉，我在查找您的租约条款时遇到问题，请稍后再试。"
 
         if any(k in q for k in self.calc_keywords):
             try:
                 response = self.agent.invoke({"input": query})
                 return response["output"]
             except Exception as e:
-                return f"Agent 执行失败: {e}"
+                return f"计算失败: {e}"
 
         try:
             response = self.conversation.invoke({"input": query})
