@@ -547,7 +547,6 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
 
 # === 主聊天机器人 (The Main Chatbot) ===
 class TenantChatbot:
-    # ( ... __init__ 和 process_query 保持不变 ... )
     def __init__(self, llm_instance, tenant_id: str):
         print(f"🌀 正在为租户 {tenant_id} 初始化 TenantChatbot 实例...")
         self.llm = llm_instance
@@ -570,16 +569,37 @@ class TenantChatbot:
             verbose=False,
         )
 
-        self.contract_prompt = ChatPromptTemplate.from_messages(
-            [
-                # ( ... prompt 保持不变 ... )
-            ]
-        )
+        # RAG 回答格式
+        self.contract_prompt = ChatPromptTemplate.from_messages([
+            (
+                "system",
+                "You are a professional Singapore tenancy-law assistant. "
+                "Answer based ONLY on the contract text. Do not assume anything not provided."
+            ),
+            (
+                "human",
+                "Contract Text:\n{context}\n\n"
+                "Question:\n{user_query}\n\n"
+                "Answer Format:\n"
+                "1) Clear short answer\n"
+                "2) Clause reference (e.g., Clause 7.2)\n"
+                "3) Quote the exact supporting sentence"
+            )
+        ])
 
+        # ✅ 合同触发关键词（已升级）
         self.contract_keywords = [
-            # ( ... keywords 保持不变 ... )
+            "clause","tenant","landlord","terminate","termination","repair","maintenance","fix",
+            "replace","deposit","refund","renewal",
+            "aircon","air conditioner","ac","hvac",   # ✅ 新增重点
+            "breach","notice","early termination","rent increase",
+            "sublet","utilities","agreement","contract","lease","rental",
+            "payment","late fee","pets","rights","obligations","dispute","jurisdiction"
         ]
-        self.calc_keywords = ["calculate", "rent", "payment", "fee", "total"]
+
+        # ✅ 避免“rent”误触发计算
+        self.calc_keywords = ["calculate", "how much", "total cost", "estimate"]
+
         self.maintenance_keywords = ["maintenance", "fix", "broken", "repair", "leak", "报修"]
         self.status_keywords = ["status", "progress", "check repair", "维修进度", "维修状态"]
 
@@ -588,14 +608,15 @@ class TenantChatbot:
     def process_query(self, query: str, tenant_id: str) -> str:
         q = query.lower()
 
-        if any(k in q for k in self.maintenance_keywords) and not any(
-            k in q for k in self.status_keywords
-        ) and "clause" not in q:
+        # === 1) 维修报修 ===
+        if any(k in q for k in self.maintenance_keywords) and not any(k in q for k in self.status_keywords):
             return "MAINTENANCE_REQUEST_TRIGGERED"
 
+        # === 2) 维修状态查询 ===
         if any(k in q for k in self.status_keywords):
             return check_maintenance_status(tenant_id)
 
+        # === 3) 合同 / 法律问题 → RAG 优先 ===
         if any(k in q for k in self.contract_keywords):
             persist_directory = get_user_vector_store_path(tenant_id)
 
@@ -625,6 +646,7 @@ class TenantChatbot:
                 print(f"❌ RAG 查询失败: {e}")
                 return "抱歉，我在查找您的租约条款时遇到问题，请稍后再试。"
 
+        # === 4) 租金计算 ===
         if any(k in q for k in self.calc_keywords):
             try:
                 response = self.agent.invoke({"input": query})
@@ -632,6 +654,7 @@ class TenantChatbot:
             except Exception as e:
                 return f"计算失败: {e}"
 
+        # === 5) 普通聊天 ===
         try:
             response = self.conversation.invoke({"input": query})
             return response["response"]
@@ -639,6 +662,7 @@ class TenantChatbot:
             return f"会话失败: {e}"
 
 print("🏗️ TenantChatbot class ready.")
+
 
 # --- [PROACTIVE-EMAIL-MOD] ---
 #
