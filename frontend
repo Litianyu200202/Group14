@@ -83,12 +83,13 @@ section[data-testid="stSidebar"] {
 # -------------------------
 # 🌐 Backend API Endpoints
 # -------------------------
-API_CHAT_URL = "http://127.0.0.1:8000/chat"
-API_USER_URL = "http://127.0.0.1:8000/user"
-API_REGISTER_URL = "http://127.0.0.1:8000/register"
-API_UPLOAD_URL = "http://127.0.0.1:8000/upload"
-API_FEEDBACK_URL = "http://127.0.0.1:8000/feedback"
-API_MAINTENANCE_URL = "http://127.0.0.1:8000/maintenance"
+API_BASE = "https://group14-1.onrender.com" 
+API_CHAT_URL = f"{API_BASE}/chat"
+API_USER_URL = f"{API_BASE}/user"
+API_REGISTER_URL = f"{API_BASE}/register"
+API_UPLOAD_URL = f"{API_BASE}/upload"
+API_FEEDBACK_URL = f"{API_BASE}/feedback"
+API_MAINTENANCE_URL = f"{API_BASE}/maintenance"
 
 # -------------------------
 # Initialize Session State
