@@ -218,7 +218,7 @@ Please follow up as soon as possible.
 """
 
     payload = {
-        "from": "Tenant Chatbot <no-reply@tenantchatbot.ai>",
+        "from": "Tenant Chatbot <onboarding@resend.dev>",
         "to": EMAIL_RECEIVER,
         "subject": f"[Chatbot Alert] Negative Feedback from Tenant {tenant_id}",
         "text": email_text
