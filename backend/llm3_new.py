@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from chromadb.config import Settings
+import requests
 import os
 import re
 import hashlib

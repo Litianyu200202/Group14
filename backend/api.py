@@ -212,50 +212,61 @@ async def chat_with_bot(
     message: str = Form(...)
 ):
     """
-    与聊天机器人对话的主要端点 - 添加向量库检查
+    主聊天端点：支持日志、LLM、向量库检查，并保存到 chat_history。
     """
     try:
         print(f"💬 Chat request from {tenant_id}: {message}")
-        
-        # --- 修复 4 ---
-        # 移除了 'from llm3 import user_vector_store_exists' 
-        # 因为它现在已经在文件顶部导入了
+
+        # --------- 保存用户消息到 chat_history ---------
+        try:
+            sql_user = """
+                INSERT INTO chat_history (tenant_id, message_type, message_content)
+                VALUES (%s, %s, %s)
+            """
+            db.execute(sql_user, (tenant_id, "user", message))
+            print("📝 Saved user message to chat_history.")
+        except Exception as e:
+            print(f"⚠️ Failed to save user message: {e}")
+
+        # --- 向量库检查 ---
         has_vector_store = user_vector_store_exists(tenant_id)
-        # --- 结束修复 4 ---
-        
         print(f"📚 User {tenant_id} has vector store: {has_vector_store}")
-        
-        # 获取或创建聊天机器人实例
+
+        # --- 获取或创建聊天机器人实例 ---
         if tenant_id not in chatbot_instances:
-            # --- 修复 5 ---
-            # 移除了 'from llm3 import llm' 
-            # 因为 'llm' 实例现在已经在文件顶部导入了
             chatbot_instances[tenant_id] = TenantChatbot(llm, tenant_id)
-            # --- 结束修复 5 ---
             print(f"🆕 Created new chatbot instance for {tenant_id}")
-        
+
         chatbot = chatbot_instances[tenant_id]
-        
-        # 处理查询
+
+        # --- LLM 处理消息 ---
         response = chatbot.process_query(message, tenant_id)
-        
         print(f"🤖 Bot response: {response}")
-        
-        # 准备返回数据
-        result = {
+
+        # --------- 保存 AI 回复到 chat_history ---------
+        try:
+            sql_assistant = """
+                INSERT INTO chat_history (tenant_id, message_type, message_content)
+                VALUES (%s, %s, %s)
+            """
+            db.execute(sql_assistant, (tenant_id, "assistant", response))
+            print("📝 Saved assistant reply to chat_history.")
+        except Exception as e:
+            print(f"⚠️ Failed to save assistant reply: {e}")
+
+        # --------- 返回结果 ---------
+        return {
             "reply": response,
             "tenant_id": tenant_id,
             "has_contract": has_vector_store
         }
-        
-        return result
-        
+
     except Exception as e:
         print(f"❌ Error in /chat endpoint: {e}")
-        # 打印更详细的错误
         import traceback
         print(f"🔍 完整错误: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
+
 
 @app.post("/maintenance")
 async def submit_maintenance_request(
@@ -309,6 +320,31 @@ async def submit_feedback(
         print(f"❌ Error in /feedback endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Feedback submission failed: {str(e)}")
 
+@app.get("/chat_history/{tenant_id}")
+def get_chat_history(tenant_id: str):
+    try:
+        sql = """
+            SELECT message_type, message_content, created_at
+            FROM chat_history
+            WHERE tenant_id = %s
+            ORDER BY created_at ASC
+        """
+        rows = db.query_all(sql, (tenant_id,))
+
+        history = []
+        for r in rows:
+            history.append({
+                "role": "user" if r["message_type"] == "user" else "assistant",
+                "content": r["message_content"],
+                "timestamp": r["created_at"].isoformat()
+            })
+
+        return {"history": history}
+
+    except Exception as e:
+        print("❌ Error loading chat history:", e)
+        return {"history": []}
+
 # ==================== 🎯 错误处理 ====================
 
 @app.exception_handler(HTTPException)
@@ -339,3 +375,4 @@ if __name__ == "__main__":
         reload=True,
         log_level="debug"
     )
+

@@ -92,25 +92,23 @@ if not st.session_state.logged_in:
     show_login_page()
     st.stop()
 
-# ========== After login: load chat history once (S3) ==========
+# ========== After login: load chat history once (Correct S3) ==========
+CHAT_HISTORY_URL = f"{API_BASE}/chat_history"
+
 if not st.session_state.history_loaded:
     user_id = st.session_state.user_info.get("user_id")
     if user_id:
         try:
-            # Convention: POST with message="__INIT__" returns chat history
-            res = requests.post(
-                API_CHAT_URL,
-                data={"tenant_id": user_id, "message": "__INIT__"}
-            )
+            res = requests.get(f"{CHAT_HISTORY_URL}/{user_id}")
             if res.status_code == 200:
-                data = res.json()
-                history = data.get("history", [])
+                history = res.json().get("history", [])
                 if isinstance(history, list):
                     st.session_state.messages = history
-        except Exception:
-            # Fail silently, start with empty history
-            pass
+        except Exception as e:
+            print("⚠️ Failed to load chat history:", e)
+
     st.session_state.history_loaded = True
+
 
 # ========== Page title ==========
 st.title("Tenant Chatbot Assistant")
@@ -165,45 +163,52 @@ if st.session_state.summary_data:
         st.json(st.session_state.summary_data)
 
 # ========== Chat history display ==========
+import uuid
+
+# ========== Chat history display ==========
 st.markdown("### 💬 Chat History")
 
-for idx, msg in enumerate(st.session_state.messages):
+for msg in st.session_state.messages:
 
     role = msg.get("role", "assistant")
-    label = "👤 User" if role == "user" else "🤖 Assistant"
     content = msg.get("content", "")
+
+    # 每条消息生成一个真正唯一的 key（uuid）
+    uid = msg.get("uid") or str(uuid.uuid4())
+    msg["uid"] = uid   # 保存回 session_state 防止再次生成不同 uuid
+
+    label = "👤 User" if role == "user" else "🤖 Assistant"
     st.markdown(f"**{label}:** {content}")
 
-    # === Feedback section: only for assistant messages ===
+    # === Feedback only for assistant messages ===
     if role == "assistant":
 
-        with st.expander(f"Feedback for this reply #{idx}"):
+        with st.expander(f"Feedback for this reply"):
 
-            # 评分选择
             rating = st.radio(
                 "Rate this reply:",
                 ["👍 Good", "👎 Bad"],
-                key=f"rating_{idx}"
+                key=f"rating_{uid}",  # 不会重复
             )
 
-            # 评论（仅差评提供）
             comment = ""
             if rating == "👎 Bad":
                 comment = st.text_area(
                     "Tell us what went wrong:",
-                    key=f"comment_{idx}"
+                    key=f"comment_{uid}",  # 不会重复
                 )
 
-            # 点击提交反馈
-            if st.button("Submit Feedback", key=f"feedback_btn_{idx}"):
+            if st.button("Submit Feedback", key=f"feedback_btn_{uid}"):
 
-                # 安全提取上一条 user query
+                # 找上一条 user 消息作为 query
+                # 因为你不能再依赖 idx，这里用消息顺序查找
                 user_query = ""
-                if idx > 0 and st.session_state.messages[idx - 1]["role"] == "user":
-                    user_query = st.session_state.messages[idx - 1]["content"]
+                messages = st.session_state.messages
+                pos = messages.index(msg)
+                if pos > 0 and messages[pos - 1]["role"] == "user":
+                    user_query = messages[pos - 1]["content"]
 
-                # 构建 payload
-                data = {
+                payload = {
                     "tenant_id": st.session_state.user_info.get("user_id"),
                     "query": user_query,
                     "response": content,
@@ -212,7 +217,7 @@ for idx, msg in enumerate(st.session_state.messages):
                 }
 
                 try:
-                    r = requests.post(API_BASE + "/feedback", data=data)
+                    r = requests.post(API_BASE + "/feedback", data=payload)
                     if r.status_code == 200:
                         st.success("Feedback submitted!")
                     else:
