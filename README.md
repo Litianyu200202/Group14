@@ -47,7 +47,7 @@ To achieve this, we have built a **multi-tenant, persistent-memory AI service pl
 This project consists of the following key components:
 
   * **Frontend (`app.py`):** **Streamlit**. Responsible for all UI rendering and user input.
-  * **Backend (`llm_final_v2_email_reminders.py`):** **Python & LangChain**. Handles all AI logic, intelligent routing, and database communication.
+  * **Backend (`llm.py`):** **Python & LangChain**. Handles all AI logic, intelligent routing, and database communication.
   * **Database (Structured Data):** **PostgreSQL (on Supabase)**. Stores the `users`, `chat_history`, `maintenance_requests`, and `user_feedback` tables.
   * **Vector Store (AI Knowledge):** **ChromaDB**. Stored on the local filesystem (`backend/vector_stores/`), with each user's vector store path being hashed.
   * **Scheduler (Cron Job):** **GitHub Actions**. Triggers the daily proactive reminder script.
