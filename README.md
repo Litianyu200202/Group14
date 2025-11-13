@@ -148,22 +148,39 @@ EMAIL_RECEIVER="agent-real-email@gmail.com"
     pip install langchain langchain-openai langchain-community langchain-core psycopg2-binary pydantic python-dotenv chromadb PyPDF2 streamlit
     ```
 
-## 5\. 🏃‍♂️ How to Run
+## 5. 🏃‍♂️ Accessing & Running the Application
 
-### Run the Streamlit App (Main Program)
+### 5.1. Accessing the Deployed Application (Recommended)
 
+Our system is fully deployed and publicly accessible. Please use the link below to access the live application.
+
+**➡️ Live Application URL:**
+**[INSERT YOUR STREAMLIT CLOUD / HUGGING FACE URL HERE]**
+*(e.g., `https://dss5105group14-tenant-chatbot.hf.space`)*
+
+---
+
+### 5.2. How to Run Locally (For Development & Testing)
+
+If you wish to run the project on your local machine, please follow the "Installation & Setup" instructions (Steps 1-4) above.
+
+#### Run the Streamlit App (Main Program)
 In your terminal, run:
-
 ```bash
 streamlit run app.py
-```
 
-### Run the Proactive Reminder Script (Manual Test)
+#### Run the Proactive Reminder Script (Manual Test)
 
-To **manually test** the proactive reminder feature (the `if __name__ == "__main__":` block), run this in your terminal:
+The proactive reminder script runs automatically in production via GitHub Actions. To manually test this feature locally (the `if __name__ == "__main__":` block), run this in your terminal:
 
 ```bash
 python llm_final_v2_email_reminders.py
+```
+
+*(Note: This requires a correctly configured `.env` file pointing to the cloud database.)*
+
+```
+```
 ```
 
 *(Note: In production, this is triggered automatically by the `reminders.yml` GitHub Action.)*
