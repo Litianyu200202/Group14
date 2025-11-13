@@ -166,33 +166,57 @@ if st.session_state.summary_data:
 
 # ========== Chat history display ==========
 st.markdown("### 💬 Chat History")
-for msg in st.session_state.messages:
+
+for idx, msg in enumerate(st.session_state.messages):
+
     role = msg.get("role", "assistant")
     label = "👤 User" if role == "user" else "🤖 Assistant"
     content = msg.get("content", "")
     st.markdown(f"**{label}:** {content}")
-        # === Feedback section: only for assistant messages ===
+
+    # === Feedback section: only for assistant messages ===
     if role == "assistant":
-        with st.expander("Feedback for this reply"):
-            rating = st.radio(f"Rate this reply:", ["👍 Good", "👎 Bad"], key=f"rating_{len(st.session_state.messages)}")
-            comment = None
+
+        with st.expander(f"Feedback for this reply #{idx}"):
+
+            # 评分选择
+            rating = st.radio(
+                "Rate this reply:",
+                ["👍 Good", "👎 Bad"],
+                key=f"rating_{idx}"
+            )
+
+            # 评论（仅差评提供）
+            comment = ""
             if rating == "👎 Bad":
-                comment = st.text_area("Tell us what went wrong:", key=f"comment_{len(st.session_state.messages)}")
-            
-            if st.button("Submit Feedback", key=f"feedback_btn_{len(st.session_state.messages)}"):
+                comment = st.text_area(
+                    "Tell us what went wrong:",
+                    key=f"comment_{idx}"
+                )
+
+            # 点击提交反馈
+            if st.button("Submit Feedback", key=f"feedback_btn_{idx}"):
+
+                # 安全提取上一条 user query
+                user_query = ""
+                if idx > 0 and st.session_state.messages[idx - 1]["role"] == "user":
+                    user_query = st.session_state.messages[idx - 1]["content"]
+
+                # 构建 payload
                 data = {
                     "tenant_id": st.session_state.user_info.get("user_id"),
-                    "query": st.session_state.messages[-2]["content"] if len(st.session_state.messages) >= 2 else "",
+                    "query": user_query,
                     "response": content,
                     "rating": -1 if rating == "👎 Bad" else 1,
-                    "comment": comment
+                    "comment": comment,
                 }
+
                 try:
                     r = requests.post(API_BASE + "/feedback", data=data)
                     if r.status_code == 200:
                         st.success("Feedback submitted!")
                     else:
-                        st.error("Failed to submit feedback.")
+                        st.error(f"Failed to submit feedback. Code: {r.status_code}")
                 except Exception as e:
                     st.error(f"Error submitting feedback: {e}")
 

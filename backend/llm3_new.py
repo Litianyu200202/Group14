@@ -6,7 +6,6 @@ import os
 import re
 import hashlib
 import shutil
-import smtplib
 from typing import List, Any, Dict, Optional
 
 # LangChain / OpenAI
@@ -25,7 +24,6 @@ from langchain.memory import ConversationBufferWindowMemory
 # Utilities
 import psycopg2
 from pydantic import BaseModel, Field
-from email.message import EmailMessage
 import datetime
 
 print("✅ Libraries imported.")
@@ -183,35 +181,62 @@ def check_user_login(tenant_id: str) -> bool:
             conn.close()
 
 # --- [EMAIL/FEEDBACK FUNCTION] ---
+
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+EMAIL_RECEIVER = os.getenv("EMAIL_RECEIVER")
+
 def _send_feedback_email_alert(tenant_id: str, query: str, response: str, comment: str):
-    # ( ... 内部代码保持不变 ... )
-    if not EMAIL_SENDER or not EMAIL_PASSWORD or not EMAIL_RECEIVER:
-        print("⚠️ Email Alert: EMAIL environment variables not fully configured, skipping send.")
+    """
+    Sends feedback email via Resend API.
+    This avoids SMTP and works 100% on Render.
+    """
+    if not RESEND_API_KEY or not EMAIL_RECEIVER:
+        print("⚠️ Resend email skipped: missing RESEND_API_KEY or EMAIL_RECEIVER.")
         return
-    print(f"🌀 Sending 👎 feedback email to {EMAIL_RECEIVER}...")
+
+    print(f"🌀 Sending feedback email via Resend to {EMAIL_RECEIVER}...")
+
+    url = "https://api.resend.com/emails"
+
+    email_text = f"""
+Tenant: {tenant_id} submitted negative feedback.
+
+==========================
+User Query:
+{query}
+
+==========================
+Bot Response:
+{response}
+
+==========================
+User Comment:
+{comment}
+
+Please follow up as soon as possible.
+"""
+
+    payload = {
+        "from": "Tenant Chatbot <no-reply@tenantchatbot.ai>",
+        "to": EMAIL_RECEIVER,
+        "subject": f"[Chatbot Alert] Negative Feedback from Tenant {tenant_id}",
+        "text": email_text
+    }
+
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
     try:
-        msg = EmailMessage()
-        msg.set_content(
-            f"Tenant: {tenant_id} submitted negative feedback.\n\n"
-            f"================================\n"
-            f"User's original query:\n{query}\n\n"
-            f"================================\n"
-            f"Bot's failed response:\n{response}\n\n"
-            f"================================\n"
-            f"User's comment:\n{comment}\n\n"
-            f"Please follow up as soon as possible."
-        )
-        msg["Subject"] = f"[Chatbot Alert] Negative Feedback from Tenant {tenant_id}"
-        msg["From"] = EMAIL_SENDER
-        msg["To"] = EMAIL_RECEIVER
-        s = smtplib.SMTP("smtp.gmail.com", 587)
-        s.starttls()
-        s.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        s.send_message(msg)
-        s.quit()
-        print("✅ Email alert sent successfully.")
+        r = requests.post(url, json=payload, headers=headers)
+        print("📨 Resend API status:", r.status_code, r.text)
+
+        if r.status_code not in (200, 202):
+            print(f"❌ Resend API Error: {r.text}")
+
     except Exception as e:
-        print(f"❌ Email alert failed to send: {e}")
+        print(f"❌ Resend Email Exception: {e}")
 
 def log_user_feedback(
     tenant_id: str, query: str, response: str, rating: int, comment: str | None = None
@@ -678,43 +703,57 @@ class TenantChatbot:
 print("🏗️ TenantChatbot class ready.")
 
 
-# --- [PROACTIVE-EMAIL-MOD] ---
-#
-# --------------------------------------------------
-#  PROACTIVE REMINDER FUNCTIONS
-# --------------------------------------------------
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 
 def _send_proactive_reminder_email(tenant_email: str, user_name: str, message_content: str) -> bool:
-    # ( ... 内部代码保持不变 ... )
     """
-    (New) Internal helper function to send proactive reminder emails to tenants.
+    Send rent reminder email using Resend API (recommended for Render).
     """
-    if not EMAIL_SENDER or not EMAIL_PASSWORD:
-        print("⚠️ Email Reminder: EMAIL_SENDER/PASSWORD environment variables not configured, skipping send.")
+    if not RESEND_API_KEY:
+        print("⚠️ Resend key missing, skipping proactive reminder email.")
         return False
 
-    print(f"🌀 Sending proactive reminder email to tenant {tenant_email}...")
+    print(f"🌀 Sending proactive reminder email to tenant {tenant_email} via Resend...")
+
+    url = "https://api.resend.com/emails"
+
+    email_text = f"""
+Hello {user_name},
+
+This is an automated reminder from your tenancy management assistant.
+
+{message_content}
+
+Thank you and have a great day!
+"""
+
+    payload = {
+        "from": "Tenant Chatbot <no-reply@tenantchatbot.ai>",
+        "to": tenant_email,
+        "subject": "Rent Reminder: Your Monthly Rent is Due Soon",
+        "text": email_text
+    }
+
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
     try:
-        msg = EmailMessage()
-        
-        plain_message_content = message_content.replace("**", "")
-        
-        msg.set_content(plain_message_content)
-        msg['Subject'] = f"Rent Reminder: Your Monthly Rent is Due Soon"
-        msg['From'] = EMAIL_SENDER
-        msg['To'] = tenant_email # (!!!) Sending to the tenant
+        r = requests.post(url, json=payload, headers=headers)
+        print("[Resend proactive] STATUS:", r.status_code, r.text)
 
-        s = smtplib.SMTP("smtp.gmail.com", 587)
-        s.starttls()
-        s.login(EMAIL_SENDER, EMAIL_PASSWORD)
-        s.send_message(msg)
-        s.quit()
-        print("✅ Tenant reminder email sent successfully.")
+        if r.status_code not in (200, 202):
+            print(f"❌ Proactive Resend email failed: {r.text}")
+            return False
+
+        print("✅ Proactive reminder email sent successfully.")
         return True
-    except Exception as e:
-        print(f"❌ Tenant reminder email failed to send: {e}")
-        return False
 
+    except Exception as e:
+        print(f"❌ Proactive reminder email error: {e}")
+        return False
+    
 def run_proactive_reminders(days_in_advance: int = 5):
     # ( ... 内部代码保持不变 ... )
     """
