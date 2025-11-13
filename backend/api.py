@@ -18,8 +18,10 @@ try:
         log_maintenance_request,
         log_user_feedback,
         get_db_connection,
-        user_vector_store_exists, # <-- 添加了此项
-        llm                       # <-- 添加了此项
+        user_vector_store_exists,
+        llm,
+        save_user_message,
+        save_assistant_message
     )
     # --- 结束修复 3 ---
     print("✅ Successfully imported all modules from llm3.py")
@@ -211,61 +213,35 @@ async def chat_with_bot(
     tenant_id: str = Form(...),
     message: str = Form(...)
 ):
-    """
-    主聊天端点：支持日志、LLM、向量库检查，并保存到 chat_history。
-    """
     try:
         print(f"💬 Chat request from {tenant_id}: {message}")
 
-        # --------- 保存用户消息到 chat_history ---------
-        try:
-            sql_user = """
-                INSERT INTO chat_history (tenant_id, message_type, message_content)
-                VALUES (%s, %s, %s)
-            """
-            db.execute(sql_user, (tenant_id, "user", message))
-            print("📝 Saved user message to chat_history.")
-        except Exception as e:
-            print(f"⚠️ Failed to save user message: {e}")
+        # 保存用户信息
+        save_user_message(tenant_id, message)
 
-        # --- 向量库检查 ---
-        has_vector_store = user_vector_store_exists(tenant_id)
-        print(f"📚 User {tenant_id} has vector store: {has_vector_store}")
-
-        # --- 获取或创建聊天机器人实例 ---
+        # 如果没有 bot 实例则创建
         if tenant_id not in chatbot_instances:
             chatbot_instances[tenant_id] = TenantChatbot(llm, tenant_id)
             print(f"🆕 Created new chatbot instance for {tenant_id}")
 
         chatbot = chatbot_instances[tenant_id]
 
-        # --- LLM 处理消息 ---
+        # 生成回复
         response = chatbot.process_query(message, tenant_id)
-        print(f"🤖 Bot response: {response}")
+        print("🤖 Bot response:", response)
 
-        # --------- 保存 AI 回复到 chat_history ---------
-        try:
-            sql_assistant = """
-                INSERT INTO chat_history (tenant_id, message_type, message_content)
-                VALUES (%s, %s, %s)
-            """
-            db.execute(sql_assistant, (tenant_id, "assistant", response))
-            print("📝 Saved assistant reply to chat_history.")
-        except Exception as e:
-            print(f"⚠️ Failed to save assistant reply: {e}")
+        # 保存回复
+        save_assistant_message(tenant_id, response)
 
-        # --------- 返回结果 ---------
         return {
             "reply": response,
             "tenant_id": tenant_id,
-            "has_contract": has_vector_store
+            "has_contract": user_vector_store_exists(tenant_id)
         }
 
     except Exception as e:
-        print(f"❌ Error in /chat endpoint: {e}")
-        import traceback
-        print(f"🔍 完整错误: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Chat processing failed: {str(e)}")
+        print("❌ Error in /chat:", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/maintenance")

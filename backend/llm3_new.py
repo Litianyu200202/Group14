@@ -24,6 +24,7 @@ from langchain.memory import ConversationBufferWindowMemory
 
 # Utilities
 import psycopg2
+import psycopg2.extras
 from pydantic import BaseModel, Field
 import datetime
 
@@ -46,6 +47,41 @@ print(f"🧠 EMBEDDINGS_BACKEND = {EMBEDDINGS_BACKEND}")
 print(f"💾 VECTORSTORE_BACKEND = {VECTORSTORE_BACKEND}")
 print(f"🐘 DATABASE_URL set: {bool(DATABASE_URL)}")
 print(f"📧 EMAIL_SENDER set: {bool(EMAIL_SENDER)}")
+
+def get_db_conn():
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+
+def save_user_message(tenant_id: str, content: str):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO chat_history (tenant_id, role, content)
+            VALUES (%s, %s, %s)
+        """, (tenant_id, "user", content))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("💾 User message saved")
+    except Exception as e:
+        print("⚠️ Failed to save user message:", e)
+
+def save_assistant_message(tenant_id: str, content: str):
+    try:
+        conn = get_db_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO chat_history (tenant_id, role, content)
+            VALUES (%s, %s, %s)
+        """, (tenant_id, "assistant", content))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print("💾 Assistant reply saved")
+    except Exception as e:
+        print("⚠️ Failed to save assistant message:", e)
+
 
 # --- Global, Stateless Objects ---
 # ( ... 内部代码保持不变 ... )
