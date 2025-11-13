@@ -546,6 +546,7 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
 
 # === The Main Chatbot ===
 class TenantChatbot:
+    # ( ... 内部代码保持不变 ... )
     def __init__(self, llm_instance, tenant_id: str):
         print(f"🌀 Initializing TenantChatbot instance for tenant {tenant_id}...")
         self.llm = llm_instance
@@ -553,9 +554,7 @@ class TenantChatbot:
 
         self.history = Psycopg2ChatHistory(tenant_id=tenant_id, db_url=DATABASE_URL)
         self.memory = ConversationBufferWindowMemory(
-            chat_memory=self.history,
-            k=10,
-            return_messages=True
+            chat_memory=self.history, k=10, return_messages=True
         )
 
         self.conversation = ConversationChain(llm=self.llm, memory=self.memory)
@@ -593,7 +592,8 @@ class TenantChatbot:
             "aircon","air conditioner","ac","hvac",   # ✅ New additions
             "breach","notice","early termination","rent increase",
             "sublet","utilities","agreement","contract","lease","rental",
-            "payment","late fee","pets","rights","obligations","dispute","jurisdiction"
+            "payment","late fee","pets","responsibilities","obligations",
+            "rights","liabilities","dispute","jurisdiction","responsible"
         ]
 
         # ✅ Avoid 'rent' mis-triggering calculation
@@ -670,6 +670,7 @@ print("🏗️ TenantChatbot class ready.")
 # --------------------------------------------------
 
 def _send_proactive_reminder_email(tenant_email: str, user_name: str, message_content: str) -> bool:
+    # ( ... 内部代码保持不变 ... )
     """
     (New) Internal helper function to send proactive reminder emails to tenants.
     """
@@ -703,6 +704,7 @@ def _send_proactive_reminder_email(tenant_email: str, user_name: str, message_co
 # (!!!) _insert_reminder_message function was removed, as we are using email instead
 
 def run_proactive_reminders(days_in_advance: int = 5):
+    # ( ... 内部代码保持不变 ... )
     """
     (Main function run by scheduler)
     Checks all tenants and *sends email* reminders for upcoming rent payments.

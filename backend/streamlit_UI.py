@@ -1,272 +1,260 @@
 import streamlit as st
 import requests
-import pandas as pd
-import time
-import os
 
-#  Page and Style Settings
-
+# ========== Streamlit page config ==========
 st.set_page_config(
     page_title="Tenant Chatbot Frontend",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-#  CSS Styling (with adaptive SVG icons)
-
-st.markdown("""
-<style>
-body {
-    background-color: #ffffff;
-    font-family: 'Segoe UI', 'Helvetica', sans-serif;
-}
-.main-header {
-    font-size: 2.2rem;
-    color: #2c3e50;
-    text-align: center;
-    margin-top: 0.8rem;
-    margin-bottom: 1.5rem;
-    font-weight: 600;
-}
-.chat-container {
-    display: flex;
-    flex-direction: column;
-    gap: 0.7rem;
-}
-.chat-row {
-    display: flex;
-    width: 100%;
-}
-.chat-bubble {
-    padding: 0.8rem 1rem;
-    border-radius: 12px;
-    line-height: 1.5;
-    max-width: 70%;
-    word-wrap: break-word;
-}
-.assistant-bubble {
-    background-color: #f7f7f7;
-    border: 1px solid #e0e0e0;
-    margin-right: auto;
-}
-.user-bubble {
-    background-color: #eaf2fd;
-    border: 1px solid #c8dafc;
-    margin-left: auto;
-}
-section[data-testid="stSidebar"] {
-    background-color: #fafafa;
-    border-right: 1px solid #e0e0e0;
-}
-svg.icon {
-    width: 1.1em;
-    height: 1.1em;
-    vertical-align: -0.125em;
-    overflow: visible;
-    display: inline-block;
-    stroke: #555;
-    stroke-width: 1.8;
-    fill: none;
-}
-</style>
-""", unsafe_allow_html=True)
-
-#  SVG ICONS
-
-ICONS = {
-    "settings": """<svg class='icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><circle cx='12' cy='12' r='3'></circle><path d='M19.4 15a1.8 1.8 0 0 0 .36 2l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.8 1.8 0 0 0-2-.36 1.8 1.8 0 0 0-1 1.62V21a2 2 0 1 1-4 0v-.09a1.8 1.8 0 0 0-1-1.62 1.8 1.8 0 0 0-2 .36l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.8 1.8 0 0 0 .36-2 1.8 1.8 0 0 0-1.62-1H3a2 2 0 1 1 0-4h.09A1.8 1.8 0 0 0 4.7 9a1.8 1.8 0 0 0-.36-2l-.06-.06A2 2 0 1 1 7.1 4.1l.06.06a1.8 1.8 0 0 0 2 .36A1.8 1.8 0 0 0 10.8 3V3a2 2 0 1 1 4 0v.09a1.8 1.8 0 0 0 1.62 1 1.8 1.8 0 0 0 2-.36l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.8 1.8 0 0 0-.36 2c0 .7.42 1.31 1.03 1.56.39.16.81.49.81 1.49z'></path></svg>""",
-    "mail": """<svg class='icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='2' y='4' width='20' height='16' rx='2' ry='2'></rect><polyline points='22 6 12 13 2 6'></polyline></svg>""",
-    "upload": """<svg class='icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'></path><polyline points='17 8 12 3 7 8'></polyline><line x1='12' y1='3' x2='12' y2='15'></line></svg>""",
-    "trash": """<svg class='icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><polyline points='3 6 5 6 21 6'></polyline><path d='M19 6l-1 14H6L5 6'></path><path d='M10 11v6'></path><path d='M14 11v6'></path><path d='M9 6V4h6v2'></path></svg>""",
-    "thumbs_up": """<svg class='icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M14 9V5a3 3 0 0 0-6 0v4'></path><path d='M5 15h11l2-6H7l-2 6z'></path></svg>""",
-    "thumbs_down": """<svg class='icon' xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 15v4a3 3 0 0 0 6 0v-4'></path><path d='M19 9H8l-2 6h11l2-6z'></path></svg>""",
-}
-
-# Backend API Endpoints
-
+# ========== Backend API endpoints ==========
 API_BASE = "https://group14-1.onrender.com"
 API_CHAT_URL = f"{API_BASE}/chat"
 API_USER_URL = f"{API_BASE}/user"
 API_REGISTER_URL = f"{API_BASE}/register"
 API_UPLOAD_URL = f"{API_BASE}/upload"
+API_MAINTENANCE_URL = f"{API_BASE}/maintenance"
 
-#  Session State
-
+# ========== Initialize session_state ==========
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+
 if "user_info" not in st.session_state:
     st.session_state.user_info = {}
 
-# 🔐 Login / Register Page
+if "summary_data" not in st.session_state:
+    st.session_state.summary_data = None
 
+if "awaiting_maintenance_form" not in st.session_state:
+    st.session_state.awaiting_maintenance_form = False
+
+if "history_loaded" not in st.session_state:
+    st.session_state.history_loaded = False
+
+if "pdf_uploaded" not in st.session_state:
+    st.session_state.pdf_uploaded = False
+
+if "last_uploaded_filename" not in st.session_state:
+    st.session_state.last_uploaded_filename = None
+
+
+# ========== Login / Register page ==========
 def show_login_page():
-    # Title and logo
     st.markdown("""
     <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:0.8rem;margin-bottom:1.5rem;">
-        <img src="https://huggingface.co/spaces/DSS5105group14/tenant-chatbot/resolve/main/src/title.jpg" alt="Logo" width="60">
-        <h1 class="main-header" style="margin:0;">Tenant Chatbot Assistant</h1>
+        <img src="https://huggingface.co/spaces/DSS5105group14/tenant-chatbot/resolve/main/src/title.jpg" width="60">
+        <h1 style="margin:0;text-align:center;">Tenant Chatbot Assistant</h1>
     </div>
     """, unsafe_allow_html=True)
 
-    # Toggle between Login and Register
-    mode = st.radio("Select mode", ["Login", "Register"], horizontal=True)
+    mode = st.radio("Mode", ["Login", "Register"], horizontal=True)
 
     if mode == "Login":
-        st.markdown(f"{ICONS['mail']} Email Address", unsafe_allow_html=True)
-        email = st.text_input("", key="login_email")
-        if st.button("Login", key="login_btn"):
+        email = st.text_input("Email")
+        if st.button("Login"):
             if email:
                 try:
-                    r = requests.get(API_USER_URL, params={"email": email}, timeout=10)
-                    if r.status_code == 200 and "user_id" in r.json():
-                        st.session_state.user_info = r.json()
+                    resp = requests.get(API_USER_URL, params={"email": email})
+                    if resp.status_code == 200 and "user_id" in resp.json():
+                        st.session_state.user_info = resp.json()
                         st.session_state.logged_in = True
+                        st.session_state.history_loaded = False
                         st.rerun()
                     else:
                         st.error("User not found.")
                 except Exception as e:
-                    st.error(f"Backend error: {e}")
-            else:
-                st.warning("Please enter your email.")
+                    st.error(f"Login failed: {e}")
     else:
-        # Register form
-        name = st.text_input("Full Name", key="register_name")
-        st.markdown(f"{ICONS['mail']} Email (used as login ID)", unsafe_allow_html=True)
-        email = st.text_input("", key="register_email")
-        if st.button("Register", key="register_btn"):
+        name = st.text_input("Full Name")
+        email = st.text_input("Email (used as login)")
+        if st.button("Register"):
             if name and email:
+                payload = {"tenant_id": email, "user_name": name}
                 try:
-                    payload = {"tenant_id": email, "user_name": name}
-                    r = requests.post(API_REGISTER_URL, data=payload, timeout=10)
+                    r = requests.post(API_REGISTER_URL, data=payload)
                     if r.status_code == 200:
                         st.session_state.logged_in = True
                         st.session_state.user_info = {"user_id": email, "name": name}
+                        st.session_state.history_loaded = False
                         st.rerun()
                     else:
                         st.error("Registration failed.")
                 except Exception as e:
-                    st.error(f"Error: {e}")
-            else:
-                st.warning("Please fill both fields.")
+                    st.error(f"Registration failed: {e}")
 
-#  Router
+
+# ========== Routing: show login page or main app ==========
 if not st.session_state.logged_in:
     show_login_page()
     st.stop()
 
-#  Chat Title
-st.markdown("""
-<div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:0.8rem;margin-bottom:1.5rem;">
-    <img src="https://huggingface.co/spaces/DSS5105group14/tenant-chatbot/resolve/main/src/title.jpg" alt="Logo" width="60">
-    <h1 class="main-header" style="margin:0;">Tenant Chatbot Assistant</h1>
-</div>
-""", unsafe_allow_html=True)
+# ========== After login: load chat history once (S3) ==========
+if not st.session_state.history_loaded:
+    user_id = st.session_state.user_info.get("user_id")
+    if user_id:
+        try:
+            # Convention: POST with message="__INIT__" returns chat history
+            res = requests.post(
+                API_CHAT_URL,
+                data={"tenant_id": user_id, "message": "__INIT__"}
+            )
+            if res.status_code == 200:
+                data = res.json()
+                history = data.get("history", [])
+                if isinstance(history, list):
+                    st.session_state.messages = history
+        except Exception:
+            # Fail silently, start with empty history
+            pass
+    st.session_state.history_loaded = True
 
-#  Sidebar (Settings & Upload)
+# ========== Page title ==========
+st.title("Tenant Chatbot Assistant")
+
+# ========== Sidebar: Settings, Logout, Contract upload, Clear chat ==========
 with st.sidebar:
-    st.markdown(f"<div style='display:flex;align-items:center;gap:6px;'>{ICONS['settings']}<h3>Settings</h3></div>", unsafe_allow_html=True)
-    st.markdown("---")
+    st.subheader("Settings")
     name = st.session_state.user_info.get("name", "User")
     st.success(f"Hello, {name}")
-    if st.button("Logout", key="logout_btn"):
-        for key in list(st.session_state.keys()):
-            del st.session_state[key]
+
+    if st.button("Log out"):
+        st.session_state.clear()
         st.rerun()
+
     st.markdown("---")
-    st.markdown(f"<div style='display:flex;align-items:center;gap:6px;'>{ICONS['upload']}<span>Upload Contract PDF</span></div>", unsafe_allow_html=True)
-    uploaded_file = st.file_uploader("", type=["pdf"], key="pdf_upload")
-    if st.button("Clear Chat", key="clear_btn"):
+    st.subheader("Contract Upload")
+
+    uploaded_file = st.file_uploader("Upload contract PDF", type=["pdf"])
+
+    # Process the PDF only when a NEW file is selected (S6 + fix reloading)
+    if uploaded_file and uploaded_file.name != st.session_state.last_uploaded_filename:
+        with st.spinner("Uploading and processing contract..."):
+            files = {
+                "file": (
+                    uploaded_file.name,
+                    uploaded_file.getvalue(),
+                    "application/pdf"
+                )
+            }
+            data = {"tenant_id": st.session_state.user_info.get("user_id")}
+            try:
+                r = requests.post(API_UPLOAD_URL, files=files, data=data)
+                if r.status_code == 200 and r.json().get("success"):
+                    st.session_state.summary_data = r.json().get("summary")
+                    st.session_state.pdf_uploaded = True
+                    st.session_state.last_uploaded_filename = uploaded_file.name
+                    st.success("Contract uploaded successfully!")
+                else:
+                    st.error("Contract upload failed.")
+            except Exception as e:
+                st.error(f"Contract upload failed: {e}")
+
+    st.markdown("---")
+    if st.button("Clear chat"):
         st.session_state.messages = []
+        st.session_state.awaiting_maintenance_form = False
+        st.rerun()
 
+# ========== Show contract summary in an expander (S6) ==========
+if st.session_state.summary_data:
+    with st.expander("📄 Contract Summary"):
+        st.json(st.session_state.summary_data)
 
-#  Chat Display
-st.markdown('<div class="chat-container">', unsafe_allow_html=True)
+# ========== Chat history display ==========
+st.markdown("### 💬 Chat History")
 for msg in st.session_state.messages:
-    bubble = "user-bubble" if msg["role"] == "user" else "assistant-bubble"
-    st.markdown(f"<div class='chat-row'><div class='chat-bubble {bubble}'>{msg['content']}</div></div>", unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+    role = msg.get("role", "assistant")
+    label = "👤 User" if role == "user" else "🤖 Assistant"
+    content = msg.get("content", "")
+    st.markdown(f"**{label}:** {content}")
+        # === Feedback section: only for assistant messages ===
+    if role == "assistant":
+        with st.expander("Feedback for this reply"):
+            rating = st.radio(f"Rate this reply:", ["👍 Good", "👎 Bad"], key=f"rating_{len(st.session_state.messages)}")
+            comment = None
+            if rating == "👎 Bad":
+                comment = st.text_area("Tell us what went wrong:", key=f"comment_{len(st.session_state.messages)}")
+            
+            if st.button("Submit Feedback", key=f"feedback_btn_{len(st.session_state.messages)}"):
+                data = {
+                    "tenant_id": st.session_state.user_info.get("user_id"),
+                    "query": st.session_state.messages[-2]["content"] if len(st.session_state.messages) >= 2 else "",
+                    "response": content,
+                    "rating": -1 if rating == "👎 Bad" else 1,
+                    "comment": comment
+                }
+                try:
+                    r = requests.post(API_BASE + "/feedback", data=data)
+                    if r.status_code == 200:
+                        st.success("Feedback submitted!")
+                    else:
+                        st.error("Failed to submit feedback.")
+                except Exception as e:
+                    st.error(f"Error submitting feedback: {e}")
 
-#  Chat Logic + Backend Call + Feedback
 
-user_input = st.chat_input("Type your message here...")
+# ========== User input ==========
+user_input = st.chat_input("Type your message...")
+
 if user_input:
+    # Append user message and placeholder assistant message
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.session_state.messages.append({"role": "assistant", "content": "Thinking..."})
     st.rerun()
 
-# Call backend API and update the reply
-property_data = None
+# ========== Call backend chat API for the latest message ==========
 if st.session_state.messages and st.session_state.messages[-1]["content"] == "Thinking...":
+    # The last user message should be the one before the placeholder
+    last_user_query = st.session_state.messages[-2]["content"]
+    payload = {
+        "tenant_id": st.session_state.user_info.get("user_id"),
+        "message": last_user_query
+    }
+
     try:
-        last_user_query = st.session_state.messages[-2]["content"] if len(st.session_state.messages) >= 2 else ""
-        payload = {"tenant_id": st.session_state.user_info.get("user_id"), "message": last_user_query}
-        res = requests.post(API_CHAT_URL, data=payload, timeout=20)
+        res = requests.post(API_CHAT_URL, data=payload)
         if res.status_code == 200:
             data = res.json()
-            ai_reply = data.get("reply", "No response found.")
-            property_data = data.get("properties", None)
+            ai_reply = data.get("reply", "No reply from backend.")
+
+            # ====== S5: Maintenance trigger detection ======
+            if ai_reply == "MAINTENANCE_REQUEST_TRIGGERED":
+                st.session_state.awaiting_maintenance_form = True
+                ai_reply = "A maintenance request is required. Please fill out the form below."
         else:
-            ai_reply = f"Backend error {res.status_code}"
+            ai_reply = f"Backend error: {res.status_code}"
     except Exception as e:
-        ai_reply = f"Connection failed: {e}"
+        ai_reply = f"Backend request failed: {e}"
 
-    # Replace "Thinking..." with actual reply
+    # Replace placeholder with actual reply
     st.session_state.messages[-1] = {"role": "assistant", "content": ai_reply}
-
-    # Refresh to render the updated message
-    time.sleep(0.3)
     st.rerun()
 
-#  Feedback Section
-if st.session_state.messages:
-    # Get last assistant message
-    idx = None
-    for j in range(len(st.session_state.messages) - 1, -1, -1):
-        m = st.session_state.messages[j]
-        if m["role"] == "assistant" and m["content"] != "Thinking...":
-            idx = j
-            break
+# ========== S5: Maintenance request form ==========
+if st.session_state.awaiting_maintenance_form:
+    st.markdown("## 🛠️ Maintenance Request Form")
+    with st.form("maintenance_form"):
+        location = st.text_input("Location (e.g., Kitchen, Bedroom)")
+        description = st.text_area("Issue Description")
+        submitted = st.form_submit_button("Submit maintenance request")
 
-    if idx is not None:
-        last_ai_reply = st.session_state.messages[idx]["content"]
-        last_user_query = st.session_state.messages[idx - 1]["content"] if idx > 0 and st.session_state.messages[idx - 1]["role"] == "user" else ""
-
-        # Align feedback buttons to bottom-right
-        st.markdown("<div style='display:flex;justify-content:flex-end;margin-top:6px;'>", unsafe_allow_html=True)
-
-        col1, col2 = st.columns([0.08, 0.12])
-        with col1:
-            if st.button("👍", key=f"like_{idx}"):
-                requests.post(f"{API_BASE}/feedback", data={
-                    "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
-                    "query": last_user_query,
-                    "response": last_ai_reply,
-                    "rating": 1
-                })
-                st.markdown("<div style='text-align:right;color:#0a7a0a;'>✅ Thank you for your feedback!</div>", unsafe_allow_html=True)
-
-        with col2:
-            if st.button("👎", key=f"dislike_{idx}"):
-                user_comment = st.text_area("Tell us how we can improve:", key=f"comment_{idx}")
-                if st.button("Submit Feedback", key=f"submit_{idx}"):
-                    requests.post(f"{API_BASE}/feedback", data={
-                        "tenant_id": st.session_state.user_info.get("user_id", "Guest"),
-                        "query": last_user_query,
-                        "response": last_ai_reply,
-                        "rating": -1,
-                        "comment": user_comment
-                    })
-                    st.markdown("<div style='text-align:right;color:#a15a00;'>⚠️ Feedback received, thank you!</div>", unsafe_allow_html=True)
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-# Optional: Show recommended properties
-if property_data:
-    st.markdown("#### 🏘️ Recommended Properties:")
-    try:
-        df = pd.DataFrame(property_data)
-        st.dataframe(df)
-    except Exception:
-        st.write(property_data)
+        if submitted:
+            data = {
+                "tenant_id": st.session_state.user_info.get("user_id"),
+                "location": location,
+                "description": description,
+            }
+            try:
+                r = requests.post(API_MAINTENANCE_URL, data=data)
+                if r.status_code == 200:
+                    st.success("Maintenance request submitted!")
+                    st.session_state.awaiting_maintenance_form = False
+                else:
+                    st.error("Failed to submit maintenance request.")
+            except Exception as e:
+                st.error(f"Failed to submit maintenance request: {e}")
+            st.rerun()
