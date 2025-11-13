@@ -168,21 +168,16 @@ If you wish to run the project on your local machine, please follow the "Install
 In your terminal, run:
 ```bash
 streamlit run app.py
-
+```
 #### Run the Proactive Reminder Script (Manual Test)
 
 The proactive reminder script runs automatically in production via GitHub Actions. To manually test this feature locally (the `if __name__ == "__main__":` block), run this in your terminal:
 
 ```bash
-python llm_final_v2_email_reminders.py
+python llmpy
 ```
 
 *(Note: This requires a correctly configured `.env` file pointing to the cloud database.)*
-
-```
-
-```
-
 *(Note: In production, this is triggered automatically by the `reminders.yml` GitHub Action.)*
 
 # 🤖 Capstone 项目: llm\_backend.py 模块
