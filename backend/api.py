@@ -70,25 +70,24 @@ async def root():
 @app.get("/user")
 async def get_user(email: str):
     """
-    根据邮箱获取用户信息
+    根据邮箱 (tenant_id) 获取用户信息
     """
     try:
         conn = get_db_connection()
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
-        
+
         with conn.cursor() as cur:
-            # --- 修复 1 ---
+            # 使用 users 表，而非 tenants
             cur.execute("""
-                SELECT tenant_id, user_name, tenant_id AS email 
-                FROM tenants 
+                SELECT tenant_id, user_name, tenant_id AS email
+                FROM users
                 WHERE tenant_id = %s
             """, (email,))
-            # --- 结束修复 1 ---
             user_data = cur.fetchone()
-        
+
         conn.close()
-        
+
         if user_data:
             return {
                 "user_id": user_data[0],
@@ -97,7 +96,7 @@ async def get_user(email: str):
             }
         else:
             raise HTTPException(status_code=404, detail="User not found")
-            
+
     except HTTPException:
         raise
     except Exception as e:
@@ -107,35 +106,35 @@ async def get_user(email: str):
 @app.post("/register")
 async def register_user(tenant_id: str = Form(...), user_name: str = Form(...)):
     """
-    注册新用户
+    注册新用户（写入 users 表）
     """
     conn = None
     try:
         conn = get_db_connection()
         if not conn:
             raise HTTPException(status_code=500, detail="Database connection failed")
-        
+
         with conn.cursor() as cur:
             # 检查用户是否已存在
-            cur.execute("SELECT tenant_id FROM tenants WHERE tenant_id = %s", (tenant_id,))
+            cur.execute("SELECT tenant_id FROM users WHERE tenant_id = %s", (tenant_id,))
             if cur.fetchone():
                 return {"success": False, "message": "User already exists"}
-            
-            # --- 修复 2 ---
+
+            # 插入用户
             cur.execute("""
-                INSERT INTO tenants (tenant_id, user_name) 
+                INSERT INTO users (tenant_id, user_name)
                 VALUES (%s, %s)
             """, (tenant_id, user_name))
-            # --- 结束修复 2 ---
             conn.commit()
-        
+
         return {"success": True, "message": "User registered successfully"}
-        
+
     except Exception as e:
         print(f"❌ Error in /register endpoint: {e}")
         if conn:
             conn.rollback()
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
     finally:
         if conn:
             conn.close()
