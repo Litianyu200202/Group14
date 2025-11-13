@@ -1,4 +1,3 @@
-# llm_final_v2_email_reminders.py
 from __future__ import annotations
 
 from chromadb.config import Settings
@@ -31,7 +30,7 @@ import datetime
 print("✅ Libraries imported.")
 
 # === API Key & Database Config ===
-# ( ... 内部代码保持不变 ... )
+# ( ... Internal code unchanged ... )
 from dotenv import load_dotenv
 load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -48,14 +47,14 @@ print(f"💾 VECTORSTORE_BACKEND = {VECTORSTORE_BACKEND}")
 print(f"🐘 DATABASE_URL set: {bool(DATABASE_URL)}")
 print(f"📧 EMAIL_SENDER set: {bool(EMAIL_SENDER)}")
 
-# --- 全局、无状态的对象 (Global, Stateless Objects) ---
-# ( ... 内部代码保持不变 ... )
+# --- Global, Stateless Objects ---
+# ( ... Internal code unchanged ... )
 if EMBEDDINGS_BACKEND == "OPENAI":
     if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY 未设置。")
+        raise RuntimeError("OPENAI_API_KEY is not set.")
     embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY, model=EMBEDDING_MODEL)
 else:
-    raise NotImplementedError(f"暂不支持的 EMBEDDINGS_BACKEND: {EMBEDDINGS_BACKEND}")
+    raise NotImplementedError(f"Unsupported EMBEDDINGS_BACKEND: {EMBEDDINGS_BACKEND}")
 print("✅ Embeddings ready:", type(embeddings).__name__)
 CHAT_MODEL = os.getenv("CHAT_MODEL", "gpt-4o-mini")
 EXTRACT_MODEL = os.getenv("EXTRACT_MODEL", "gpt-4o-mini")
@@ -63,20 +62,20 @@ llm = ChatOpenAI(model=CHAT_MODEL, temperature=0.2, api_key=OPENAI_API_KEY)
 extraction_llm = ChatOpenAI(model=EXTRACT_MODEL, temperature=0.0, api_key=OPENAI_API_KEY)
 print(f"✅ LLMs ready: {CHAT_MODEL} (chat) & {EXTRACT_MODEL} (extraction)")
 
-# === 数据库函数 (Database Functions) [S5] ===
+# === Database Functions [S5] ===
 def get_db_connection():
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     try:
         conn = psycopg2.connect(DATABASE_URL)
         return conn
     except Exception as e:
-        print(f"❌ 无法连接到数据库: {e}")
+        print(f"❌ Could not connect to database: {e}")
         return None
 
 def log_maintenance_request(
     tenant_id: str, location: str, description: str, priority: str = "Standard"
 ) -> str | None:
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     sql = """
     INSERT INTO maintenance_requests (tenant_id, location, description, status, priority)
     VALUES (%s, %s, %s, %s, %s)
@@ -86,15 +85,15 @@ def log_maintenance_request(
     try:
         conn = get_db_connection()
         if conn is None:
-            raise Exception("获取数据库连接失败")
+            raise Exception("Failed to get database connection")
         with conn.cursor() as cur:
             cur.execute(sql, (tenant_id, location, description, "Pending", priority))
             request_id = cur.fetchone()[0]
             conn.commit()
-        print(f"✅ 成功记录维修请求 ID: {request_id} (租户: {tenant_id})")
+        print(f"✅ Successfully logged maintenance request ID: {request_id} (Tenant: {tenant_id})")
         return f"REQ-{request_id}"
     except Exception as e:
-        print(f"❌ 数据库写入失败: {e}")
+        print(f"❌ Database write failed: {e}")
         if conn:
             conn.rollback()
         return None
@@ -103,7 +102,7 @@ def log_maintenance_request(
             conn.close()
 
 def check_maintenance_status(tenant_id: str) -> str:
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     sql = """
     SELECT request_id, location, description, status, created_at
     FROM maintenance_requests
@@ -114,48 +113,48 @@ def check_maintenance_status(tenant_id: str) -> str:
     try:
         conn = get_db_connection()
         if conn is None:
-            raise Exception("获取数据库连接失败")
+            raise Exception("Failed to get database connection")
         with conn.cursor() as cur:
             cur.execute(sql, (tenant_id,))
             requests = cur.fetchall()
         if not requests:
-            return "您目前没有任何待处理或已完成的维修请求。"
-        lines = [f"您共有 {len(requests)} 条维修记录："]
+            return "You currently have no pending or completed maintenance requests."
+        lines = [f"You have a total of {len(requests)} maintenance records:"]
         for req in requests:
             req_id, loc, desc, status, date = req
             short_desc = (desc[:30] + "...") if len(desc) > 30 else desc
             lines.append(
-                f"* **REQ-{req_id}** ({loc} - {short_desc}): **{status}** (提交于 {date.strftime('%Y-%m-%d')})"
+                f"* **REQ-{req_id}** ({loc} - {short_desc}): **{status}** (Submitted on {date.strftime('%Y-%m-%d')})"
             )
         return "\n".join(lines)
     except Exception as e:
-        print(f"❌ 数据库查询失败: {e}")
-        return "抱歉，查询您的维修记录时遇到错误。"
+        print(f"❌ Database query failed: {e}")
+        return "Sorry, an error occurred while checking your maintenance records."
     finally:
         if conn:
             conn.close()
 
-# === 用户账户函数 (User Account Functions) ===
+# === User Account Functions ===
 def register_user(tenant_id: str, user_name: str) -> bool:
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     sql = "INSERT INTO users (tenant_id, user_name) VALUES (%s, %s);"
     conn = None
     try:
         conn = get_db_connection()
         if conn is None:
-            raise Exception("获取数据库连接失败")
+            raise Exception("Failed to get database connection")
         with conn.cursor() as cur:
             cur.execute(sql, (tenant_id, user_name))
             conn.commit()
-        print(f"✅ 成功注册新用户: {tenant_id}")
+        print(f"✅ Successfully registered new user: {tenant_id}")
         return True
     except psycopg2.errors.UniqueViolation:
-        print(f"⚠️ 注册失败：{tenant_id} 已存在。")
+        print(f"⚠️ Registration failed: {tenant_id} already exists.")
         if conn:
             conn.rollback()
         return False
     except Exception as e:
-        print(f"❌ 注册时发生未知错误: {e}")
+        print(f"❌ Unknown error during registration: {e}")
         if conn:
             conn.rollback()
         return False
@@ -164,19 +163,19 @@ def register_user(tenant_id: str, user_name: str) -> bool:
             conn.close()
 
 def check_user_login(tenant_id: str) -> bool:
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     sql = "SELECT EXISTS (SELECT 1 FROM users WHERE tenant_id = %s);"
     conn = None
     try:
         conn = get_db_connection()
         if conn is None:
-            raise Exception("获取数据库连接失败")
+            raise Exception("Failed to get database connection")
         with conn.cursor() as cur:
             cur.execute(sql, (tenant_id,))
             exists = cur.fetchone()[0]
         return bool(exists)
     except Exception as e:
-        print(f"❌ 检查用户登录时出错: {e}")
+        print(f"❌ Error checking user login: {e}")
         return False
     finally:
         if conn:
@@ -184,24 +183,24 @@ def check_user_login(tenant_id: str) -> bool:
 
 # --- [EMAIL/FEEDBACK FUNCTION] ---
 def _send_feedback_email_alert(tenant_id: str, query: str, response: str, comment: str):
-    # ( ... 内部代码保持不变: 这个函数是 *发送给中介* 的 ... )
+    # ( ... Internal code unchanged: This function sends *to the agent* ... )
     if not EMAIL_SENDER or not EMAIL_PASSWORD or not EMAIL_RECEIVER:
-        print("⚠️ 邮件警报：EMAIL 环境变量未完全配置，跳过发送。")
+        print("⚠️ Email Alert: EMAIL environment variables not fully configured, skipping send.")
         return
-    print(f"🌀 正在向 {EMAIL_RECEIVER} 发送 👎 反馈邮件...")
+    print(f"🌀 Sending 👎 feedback email to {EMAIL_RECEIVER}...")
     try:
         msg = EmailMessage()
         msg.set_content(
-            f"租户 (Tenant): {tenant_id} 提交了负面反馈。\n\n"
+            f"Tenant: {tenant_id} submitted negative feedback.\n\n"
             f"================================\n"
-            f"用户的原始问题:\n{query}\n\n"
+            f"User's original query:\n{query}\n\n"
             f"================================\n"
-            f"机器人失败的回答:\n{response}\n\n"
+            f"Bot's failed response:\n{response}\n\n"
             f"================================\n"
-            f"用户的评论:\n{comment}\n\n"
-            f"请尽快跟进。"
+            f"User's comment:\n{comment}\n\n"
+            f"Please follow up as soon as possible."
         )
-        msg["Subject"] = f"[Chatbot 警报] 来自租户 {tenant_id} 的负面反馈"
+        msg["Subject"] = f"[Chatbot Alert] Negative Feedback from Tenant {tenant_id}"
         msg["From"] = EMAIL_SENDER
         msg["To"] = EMAIL_RECEIVER
         s = smtplib.SMTP("smtp.gmail.com", 587)
@@ -209,14 +208,14 @@ def _send_feedback_email_alert(tenant_id: str, query: str, response: str, commen
         s.login(EMAIL_SENDER, EMAIL_PASSWORD)
         s.send_message(msg)
         s.quit()
-        print("✅ 邮件警报发送成功。")
+        print("✅ Email alert sent successfully.")
     except Exception as e:
-        print(f"❌ 邮件警报发送失败: {e}")
+        print(f"❌ Email alert failed to send: {e}")
 
 def log_user_feedback(
     tenant_id: str, query: str, response: str, rating: int, comment: str | None = None
 ) -> bool:
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     sql_feedback = """
     INSERT INTO user_feedback (tenant_id, query, response, rating, comment)
     VALUES (%s, %s, %s, %s, %s);
@@ -226,17 +225,17 @@ def log_user_feedback(
     try:
         conn = get_db_connection()
         if conn is None:
-            raise Exception("获取数据库连接失败")
+            raise Exception("Failed to get database connection")
         with conn.cursor() as cur:
             cur.execute(sql_feedback, (tenant_id, query, response, rating, comment))
             conn.commit()
-        print(f"✅ 成功记录反馈 (租户: {tenant_id}, 评分: {rating})")
+        print(f"✅ Successfully logged feedback (Tenant: {tenant_id}, Rating: {rating})")
         db_success = True
 
         if rating == -1 and comment:
             ai_ack_message = (
-                f"（系统提示：我已收到您对上一个回答的反馈：'{comment}'。"
-                f"我已将此问题通知人类中介，他们会尽快跟进。）"
+                f"(System Note: I have received your feedback on the last answer: '{comment}'. "
+                f"I have notified a human agent about this issue, and they will follow up soon.)"
             )
             sql_chat_history = """
             INSERT INTO chat_history (tenant_id, message_type, message_content)
@@ -245,9 +244,9 @@ def log_user_feedback(
             with conn.cursor() as cur:
                 cur.execute(sql_chat_history, (tenant_id, ai_ack_message))
                 conn.commit()
-            print(f"✅ 已在 {tenant_id} 的聊天记录中插入AI确认消息。")
+            print(f"✅ Inserted AI acknowledgment message into {tenant_id}'s chat history.")
     except Exception as e:
-        print(f"❌ 反馈数据库写入失败: {e}")
+        print(f"❌ Feedback database write failed: {e}")
         if conn:
             conn.rollback()
     finally:
@@ -259,21 +258,21 @@ def log_user_feedback(
 
     return db_success
 
-# === 向量库函数 (Vector Store Functions) [S6] ===
+# === Vector Store Functions [S6] ===
 VECTOR_STORE_DIR_BASE = "backend/vector_stores"
 os.makedirs(VECTOR_STORE_DIR_BASE, exist_ok=True)
 
 def get_user_vector_store_path(tenant_id: str) -> str:
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     hashed_id = hashlib.sha256(tenant_id.encode("utf-8")).hexdigest()
     return os.path.join(VECTOR_STORE_DIR_BASE, hashed_id)
 
 def user_vector_store_exists(tenant_id: str) -> bool:
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     return os.path.exists(get_user_vector_store_path(tenant_id))
 
 class ContractSummary(BaseModel):
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     monthly_rent: Optional[float] = Field(description="The monthly rental amount")
     security_deposit: Optional[float] = Field(description="The security deposit amount")
     lease_start_date: Optional[str] = Field(description="The start date of the lease (YYYY-MM-DD)")
@@ -281,20 +280,20 @@ class ContractSummary(BaseModel):
     tenant_name: Optional[str] = Field(description="The full name of the Tenant")
     landlord_name: Optional[str] = Field(description="The full name of the Landlord")
 
-# --- [PROACTIVE] 合并 _save_summary_to_db 到 create_user_vectorstore ---
+# --- [PROACTIVE] Merged _save_summary_to_db into create_user_vectorstore ---
 def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any] | None:
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     persist_directory = get_user_vector_store_path(tenant_id)
     if user_vector_store_exists(tenant_id):
-        print(f"⚠️ 发现 {tenant_id} 的旧向量库，正在删除...")
+        print(f"⚠️ Found old vector store for {tenant_id}, deleting...")
         shutil.rmtree(persist_directory)
 
-    print(f"⚙️ 正在为 {tenant_id} (Hashed: {persist_directory}) 从 {pdf_file_path} 创建向量库...")
+    print(f"⚙️ Creating vector store for {tenant_id} (Hashed: {persist_directory}) from {pdf_file_path}...")
     try:
         loader = PyPDFLoader(pdf_file_path)
         docs = loader.load()
         if not docs:
-            print("⚠️ PDF 未读取到内容。")
+            print("⚠️ No content read from PDF.")
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         splits = text_splitter.split_documents(docs)
 
@@ -309,10 +308,10 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
             persist_directory=persist_directory,
             client_settings=client_settings
         )
-        print(f"✅ 成功为 {tenant_id} 创建并持久化向量库。")
+        print(f"✅ Successfully created and persisted vector store for {tenant_id}.")
 
-        # 合同摘要抽取
-        print(f"🌀 正在为 {tenant_id} 提取合同摘要...")
+        # Contract Summary Extraction
+        print(f"🌀 Extracting contract summary for {tenant_id}...")
         extraction_chain = create_extraction_chain(
             schema=ContractSummary.model_json_schema(), llm=extraction_llm
         )
@@ -324,28 +323,28 @@ def create_user_vectorstore(tenant_id: str, pdf_file_path: str) -> Dict[str, Any
             payload = result.get("text") or result.get("output") or result.get("data")
             if payload and isinstance(payload, list) and len(payload) > 0 and isinstance(payload[0], dict):
                 summary_data = payload[0]
-                print(f"✅ 成功提取摘要: {summary_data}")
+                print(f"✅ Successfully extracted summary: {summary_data}")
                 
-                # --- [PROACTIVE] 在此调用 _save_summary_to_db 的逻辑 ---
+                # --- [PROACTIVE] Calling _save_summary_to_db logic here ---
                 _save_summary_to_db(tenant_id, summary_data)
                 # --- [END PROACTIVE] ---
                 
             else:
-                print("⚠️ 提取链运行成功，但未返回有效数据。")
+                print("⚠️ Extraction chain ran successfully, but returned no valid data.")
         else:
-            print("⚠️ 提取链返回了未知结构。")
+            print("⚠️ Extraction chain returned an unknown structure.")
             
         return summary_data 
 
     except Exception as e:
-        print(f"❌ 为 {tenant_id} 创建向量库或提取摘要时失败: {e}")
+        print(f"❌ Failed to create vector store or extract summary for {tenant_id}: {e}")
         return None
 
-# --- [PROACTIVE] 新增：用于保存摘要的辅助函数 ---
+# --- [PROACTIVE] New: Helper function to save the summary ---
 def _save_summary_to_db(tenant_id: str, summary_data: dict):
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     """
-    (内部辅助函数) 将提取的摘要信息 保存到 'users' 表 以供将来提醒。
+    (Internal helper) Saves extracted summary info to the 'users' table for future reminders.
     """
     try:
         rent = summary_data.get('monthly_rent')
@@ -367,7 +366,7 @@ def _save_summary_to_db(tenant_id: str, summary_data: dict):
                 end_date = None
 
         conn = get_db_connection()
-        if conn is None: raise Exception("无法连接数据库")
+        if conn is None: raise Exception("Could not connect to database")
         
         sql = """
         UPDATE users SET monthly_rent = %s, lease_end_date = %s, rent_due_day = %s
@@ -377,14 +376,14 @@ def _save_summary_to_db(tenant_id: str, summary_data: dict):
             cur.execute(sql, (rent, end_date, rent_due_day, tenant_id))
             conn.commit()
         conn.close()
-        print(f"✅ 成功将合同摘要（租金、日期） 保存到 users 表。")
+        print(f"✅ Successfully saved contract summary (rent, dates) to users table.")
 
     except Exception as e:
-        print(f"⚠️ 警告：成功提取摘要，但保存到 users 表 失败: {e}")
+        print(f"⚠️ Warning: Successfully extracted summary, but failed to save to users table: {e}")
 # --- [END PROACTIVE] ---
 
-# === 智能体与工具 (Agent & Tools) ===
-# ( ... 内部代码保持不变 ... )
+# === Agent & Tools ===
+# ( ... Internal code unchanged ... )
 def calculate_rent_tool(query: str) -> str:
     nums = [int(x) for x in re.findall(r"\d+", query)]
     if len(nums) >= 2:
@@ -400,17 +399,17 @@ calculate_rent = Tool.from_function(
 )
 print("🧰 Tool ready: calculate_rent")
 
-# === 自定义的 Psycopg2 聊天记录类 ===
+# === Custom Psycopg2 Chat History Class ===
 class Psycopg2ChatHistory(BaseChatMessageHistory):
-    # ( ... 内部代码保持不变 ... )
+    # ( ... Internal code unchanged ... )
     def __init__(self, tenant_id: str, db_url: str):
         self.tenant_id = tenant_id
         self.db_url = db_url
         self._ensure_table_exists()
 
-    # --- [PROACTIVE] 修改 _ensure_table_exists ---
+    # --- [PROACTIVE] Modified _ensure_table_exists ---
     def _ensure_table_exists(self):
-        # ( ... 内部代码保持不变, 包含已更新的 users 表 ...)
+        # ( ... Internal code unchanged, includes updated users table ...)
         ddl_sql = [
             """
             CREATE TABLE IF NOT EXISTS chat_history (
@@ -444,13 +443,13 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
             );
             """,
             """
-            /* --- [PROACTIVE] 修改 'users' 表定义 --- */
+            /* --- [PROACTIVE] Modified 'users' table definition --- */
             CREATE TABLE IF NOT EXISTS users (
                 tenant_id TEXT PRIMARY KEY,
                 user_name TEXT,
                 created_at TIMESTAMP DEFAULT NOW(),
                 
-                /* 新增：用于主动提醒的列 */
+                /* New: Columns for proactive reminders */
                 monthly_rent NUMERIC(10, 2),
                 rent_due_day INT,
                 lease_end_date DATE
@@ -464,9 +463,9 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
                 for stmt in ddl_sql:
                     cur.execute(stmt)
                 conn.commit()
-            print("✅ 表结构检查/创建完成 (已更新 users 表)。")
+            print("✅ Table structure check/creation complete (users table updated).")
         except Exception as e:
-            print(f"❌ 建表检查失败: {e}")
+            print(f"❌ Table creation check failed: {e}")
             if conn:
                 conn.rollback()
         finally:
@@ -476,7 +475,7 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
 
     @property
     def messages(self) -> List[BaseMessage]:
-        # ( ... 内部代码保持不变 ... )
+        # ( ... Internal code unchanged ... )
         sql = """
         SELECT message_type, message_content 
         FROM chat_history 
@@ -496,14 +495,14 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
                 elif msg_type == "ai":
                     messages.append(AIMessage(content=msg_content))
         except Exception as e:
-            print(f"❌ 聊天记录(读取)失败: {e}")
+            print(f"❌ Chat history (read) failed: {e}")
         finally:
             if conn:
                 conn.close()
         return messages
 
     def add_message(self, message: BaseMessage) -> None:
-        # ( ... 内部代码保持不变 ... )
+        # ( ... Internal code unchanged ... )
         sql = """
         INSERT INTO chat_history (tenant_id, message_type, message_content)
         VALUES (%s, %s, %s);
@@ -521,7 +520,7 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
                 cur.execute(sql, (self.tenant_id, msg_type, message.content))
                 conn.commit()
         except Exception as e:
-            print(f"❌ 聊天记录(写入)失败: {e}")
+            print(f"❌ Chat history (write) failed: {e}")
             if conn:
                 conn.rollback()
         finally:
@@ -529,7 +528,7 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
                 conn.close()
 
     def clear(self) -> None:
-        # ( ... 内部代码保持不变 ... )
+        # ( ... Internal code unchanged ... )
         sql = "DELETE FROM chat_history WHERE tenant_id = %s;"
         conn = None
         try:
@@ -538,17 +537,17 @@ class Psycopg2ChatHistory(BaseChatMessageHistory):
                 cur.execute(sql, (self.tenant_id,))
                 conn.commit()
         except Exception as e:
-            print(f"❌ 聊天记录(清除)失败: {e}")
+            print(f"❌ Chat history (clear) failed: {e}")
             if conn:
                 conn.rollback()
         finally:
             if conn:
                 conn.close()
 
-# === 主聊天机器人 (The Main Chatbot) ===
+# === The Main Chatbot ===
 class TenantChatbot:
     def __init__(self, llm_instance, tenant_id: str):
-        print(f"🌀 正在为租户 {tenant_id} 初始化 TenantChatbot 实例...")
+        print(f"🌀 Initializing TenantChatbot instance for tenant {tenant_id}...")
         self.llm = llm_instance
         self.tenant_id = tenant_id
 
@@ -569,7 +568,7 @@ class TenantChatbot:
             verbose=False,
         )
 
-        # RAG 回答格式
+        # RAG Answer Format
         self.contract_prompt = ChatPromptTemplate.from_messages([
             (
                 "system",
@@ -587,41 +586,41 @@ class TenantChatbot:
             )
         ])
 
-        # ✅ 合同触发关键词（已升级）
+        # ✅ Contract Trigger Keywords (Upgraded)
         self.contract_keywords = [
             "clause","tenant","landlord","terminate","termination","repair","maintenance","fix",
             "replace","deposit","refund","renewal",
-            "aircon","air conditioner","ac","hvac",   # ✅ 新增重点
+            "aircon","air conditioner","ac","hvac",   # ✅ New additions
             "breach","notice","early termination","rent increase",
             "sublet","utilities","agreement","contract","lease","rental",
             "payment","late fee","pets","rights","obligations","dispute","jurisdiction"
         ]
 
-        # ✅ 避免“rent”误触发计算
+        # ✅ Avoid 'rent' mis-triggering calculation
         self.calc_keywords = ["calculate", "how much", "total cost", "estimate"]
 
-        self.maintenance_keywords = ["maintenance", "fix", "broken", "repair", "leak", "报修"]
-        self.status_keywords = ["status", "progress", "check repair", "维修进度", "维修状态"]
+        self.maintenance_keywords = ["maintenance", "fix", "broken", "repair", "leak", "report repair"]
+        self.status_keywords = ["status", "progress", "check repair", "repair progress", "repair status"]
 
-        print(f"✅ 租户 {tenant_id} 的 TenantChatbot 实例创建完毕 (使用永久记忆)。")
+        print(f"✅ TenantChatbot instance for tenant {tenant_id} created (using persistent memory).")
 
     def process_query(self, query: str, tenant_id: str) -> str:
         q = query.lower()
 
-        # === 1) 维修报修 ===
+        # === 1) Maintenance Request ===
         if any(k in q for k in self.maintenance_keywords) and not any(k in q for k in self.status_keywords):
             return "MAINTENANCE_REQUEST_TRIGGERED"
 
-        # === 2) 维修状态查询 ===
+        # === 2) Maintenance Status Check ===
         if any(k in q for k in self.status_keywords):
             return check_maintenance_status(tenant_id)
 
-        # === 3) 合同 / 法律问题 → RAG 优先 ===
+        # === 3) Contract / Legal Questions → RAG Priority ===
         if any(k in q for k in self.contract_keywords):
             persist_directory = get_user_vector_store_path(tenant_id)
 
             if not user_vector_store_exists(tenant_id):
-                return "我还没有您的租约文件，请先上传合同 PDF。"
+                return "I don't have your lease file yet. Please upload the contract PDF first."
 
             try:
                 vectorstore = Chroma(
@@ -631,7 +630,7 @@ class TenantChatbot:
                 retriever = vectorstore.as_retriever()
                 docs = retriever.get_relevant_documents(query)
 
-                # ✅ 正确提取文档文本，而不是 Document 对象
+                # ✅ Correctly extract document text, not the Document object
                 context_text = "\n\n---\n\n".join([d.page_content for d in docs])
 
                 prompt = self.contract_prompt.format(
@@ -643,23 +642,23 @@ class TenantChatbot:
                 return response.content
 
             except Exception as e:
-                print(f"❌ RAG 查询失败: {e}")
-                return "抱歉，我在查找您的租约条款时遇到问题，请稍后再试。"
+                print(f"❌ RAG query failed: {e}")
+                return "Sorry, I encountered a problem looking up your lease terms. Please try again later."
 
-        # === 4) 租金计算 ===
+        # === 4) Rent Calculation ===
         if any(k in q for k in self.calc_keywords):
             try:
                 response = self.agent.invoke({"input": query})
                 return response["output"]
             except Exception as e:
-                return f"计算失败: {e}"
+                return f"Calculation failed: {e}"
 
-        # === 5) 普通聊天 ===
+        # === 5) General Chat ===
         try:
             response = self.conversation.invoke({"input": query})
             return response["response"]
         except Exception as e:
-            return f"会话失败: {e}"
+            return f"Conversation failed: {e}"
 
 print("🏗️ TenantChatbot class ready.")
 
@@ -667,48 +666,48 @@ print("🏗️ TenantChatbot class ready.")
 # --- [PROACTIVE-EMAIL-MOD] ---
 #
 # --------------------------------------------------
-#  主动提醒功能 (PROACTIVE REMINDER FUNCTIONS)
+#  PROACTIVE REMINDER FUNCTIONS
 # --------------------------------------------------
 
 def _send_proactive_reminder_email(tenant_email: str, user_name: str, message_content: str) -> bool:
     """
-    (新增) 内部辅助函数，用于向租户 发送主动提醒邮件。
+    (New) Internal helper function to send proactive reminder emails to tenants.
     """
     if not EMAIL_SENDER or not EMAIL_PASSWORD:
-        print("⚠️ 邮件提醒：EMAIL_SENDER/PASSWORD 环境变量未配置，跳过发送。")
+        print("⚠️ Email Reminder: EMAIL_SENDER/PASSWORD environment variables not configured, skipping send.")
         return False
 
-    print(f"🌀 正在向租户 {tenant_email} 发送主动提醒邮件...")
+    print(f"🌀 Sending proactive reminder email to tenant {tenant_email}...")
     try:
         msg = EmailMessage()
         
-        # 将消息中的 Markdown 粗体 (**) 移除，转换为纯文本
+        # Remove Markdown bolding (**) from the message for plain text
         plain_message_content = message_content.replace("**", "")
         
         msg.set_content(plain_message_content)
-        msg['Subject'] = f"租金提醒：您的月租即将到期"
+        msg['Subject'] = f"Rent Reminder: Your Monthly Rent is Due Soon"
         msg['From'] = EMAIL_SENDER
-        msg['To'] = tenant_email # (!!!) 发送给租户
+        msg['To'] = tenant_email # (!!!) Sending to the tenant
 
         s = smtplib.SMTP("smtp.gmail.com", 587)
         s.starttls()
         s.login(EMAIL_SENDER, EMAIL_PASSWORD)
         s.send_message(msg)
         s.quit()
-        print("✅ 租户提醒邮件发送成功。")
+        print("✅ Tenant reminder email sent successfully.")
         return True
     except Exception as e:
-        print(f"❌ 租户提醒邮件发送失败: {e}")
+        print(f"❌ Tenant reminder email failed to send: {e}")
         return False
 
-# (!!!) _insert_reminder_message 函数已被移除，因为我们改用邮件
+# (!!!) _insert_reminder_message function was removed, as we are using email instead
 
 def run_proactive_reminders(days_in_advance: int = 5):
     """
-    (由调度器运行的主函数)
-    检查所有租户，并为即将到期的租金 *发送电子邮件* 提醒。
+    (Main function run by scheduler)
+    Checks all tenants and *sends email* reminders for upcoming rent payments.
     """
-    print(f"🤖 正在运行主动提醒... 查找 {days_in_advance} 天后到期的租金。")
+    print(f"🤖 Running proactive reminders... Looking for rent due {days_in_advance} days from now.")
     
     today = datetime.date.today()
     target_date = today + datetime.timedelta(days=days_in_advance)
@@ -722,7 +721,7 @@ def run_proactive_reminders(days_in_advance: int = 5):
     
     conn = get_db_connection()
     if conn is None:
-        print("❌ 提醒失败：无法连接到数据库。")
+        print("❌ Reminder failed: Could not connect to database.")
         return
         
     try:
@@ -730,45 +729,45 @@ def run_proactive_reminders(days_in_advance: int = 5):
             cur.execute(find_sql, (target_day_of_month,))
             tenants_to_remind = cur.fetchall()
     except Exception as e:
-        print(f"❌ 提醒失败：查询 users 表时出错: {e}")
+        print(f"❌ Reminder failed: Error querying users table: {e}")
         conn.close()
         return
         
-    print(f"ℹ️ 找到 {len(tenants_to_remind)} 个租户需要在 {target_date} (第 {target_day_of_month} 天) 支付租金。")
+    print(f"ℹ️ Found {len(tenants_to_remind)} tenants who need to pay rent on {target_date} (Day {target_day_of_month}).")
     
     sent_count = 0
     for tenant in tenants_to_remind:
         tenant_id, user_name, monthly_rent = tenant
         
-        friendly_name = user_name.split(' ')[0] if user_name else "租户"
+        friendly_name = user_name.split(' ')[0] if user_name else "Tenant"
         message = (
-            f"您好 {friendly_name}！这是一个自动提醒：\n\n"
-            f"您的 **${monthly_rent}** 月租金即将在 {days_in_advance} 天后 "
-            f"({target_date.strftime('%Y-%m-%d')}) 到期。\n\n"
-            f"祝您有美好的一天！"
+            f"Hello {friendly_name}! This is an automated reminder:\n\n"
+            f"Your monthly rent of **${monthly_rent}** is due in {days_in_advance} days "
+            f"(on {target_date.strftime('%Y-%m-%d')}).\n\n"
+            f"Have a great day!"
         )
         
-        # (!!!) 修改：调用邮件函数，而不是 _insert_reminder_message
+        # (!!!) Change: Call the email function instead of _insert_reminder_message
         if _send_proactive_reminder_email(tenant_id, friendly_name, message):
             sent_count += 1
         
     conn.close()
-    print(f"✅ 提醒检查完成。成功发送 {sent_count} 封邮件。")
+    print(f"✅ Reminder check complete. Successfully sent {sent_count} emails.")
 
 if __name__ == "__main__":
     """
-    允许此文件被直接运行 (例如, `python llm3_new.py`)
-    来手动触发提醒检查。
+    Allows this file to be run directly (e.g., `python llm3_new.py`)
+    to manually trigger the reminder check.
     """
     print("==========================================")
-    print("   正在作为独立脚本运行主动提醒检查...   ")
+    print("   Running proactive reminder check as a standalone script...   ")
     print("==========================================")
     
     load_dotenv() 
     
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
-        print("❌ 错误: DATABASE_URL 未在 .env 文件中设置。无法运行提醒。")
+        print("❌ Error: DATABASE_URL not set in .env file. Cannot run reminders.")
     else:
         run_proactive_reminders(days_in_advance=5)
 # --- [END PROACTIVE-EMAIL-MOD] ---
