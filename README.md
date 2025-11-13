@@ -180,7 +180,7 @@ python llm_final_v2_email_reminders.py
 *(Note: This requires a correctly configured `.env` file pointing to the cloud database.)*
 
 ```
-```
+
 ```
 
 *(Note: In production, this is triggered automatically by the `reminders.yml` GitHub Action.)*
