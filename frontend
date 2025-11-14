@@ -171,20 +171,32 @@ with st.sidebar:
 
     st.success(f"Hello, {st.session_state.user_info.get('name', 'User')}")
 
+    # Logout
     if st.button("Logout"):
         st.session_state.clear()
         st.rerun()
 
     st.markdown("---")
+
+    # Upload contract
     st.markdown(
         f"<div style='display:flex;align-items:center;gap:6px;'>{ICONS['upload']}<span>Upload Contract PDF</span></div>",
         unsafe_allow_html=True
     )
-
     uploaded_file = st.file_uploader("Upload PDF", type=["pdf"])
 
-    # ===== TRUE BACKEND CHAT HISTORY =====
     st.markdown("---")
+
+    #  Clear Current Chat (session-only)
+    if st.button("Clear Current Chat"):
+        st.session_state.messages = [] 
+        st.session_state.show_comment_box = False
+        st.session_state.awaiting_maintenance_form = False
+        st.rerun()
+
+    st.markdown("---")
+
+    # ===== TRUE BACKEND CHAT HISTORY =====
     st.subheader("Chat History (from backend)")
 
     if st.button("Show / Hide History", key="toggle_history_btn"):
@@ -211,6 +223,7 @@ with st.sidebar:
                 st.error("Failed to load history.")
         except Exception as e:
             st.error(f"Error: {e}")
+
 
 
 # ========== Contract Summary ==========
