@@ -10,7 +10,7 @@ uvicorn backend.api:app --reload
 
 # 🤖 Capstone Project: AI Tenant Assistant (Track B)
 
-**Project Name:** [Your Group Name, e.g., Group 14]
+**Project Name:** [Group 14]
 **Course:** DSS5105 Capstone Project
 **Submission Date:** November 14, 2025
 
