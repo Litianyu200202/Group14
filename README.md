@@ -46,8 +46,8 @@ To achieve this, we have built a **multi-tenant, persistent-memory AI service pl
 
 This project consists of the following key components:
 
-  * **Frontend (`app.py`):** **Streamlit**. Responsible for all UI rendering and user input.
-  * **Backend (`llm.py`):** **Python & LangChain**. Handles all AI logic, intelligent routing, and database communication.
+  * **Frontend (`streamlit_UI.py`):** **Streamlit**. Responsible for all UI rendering and user input.
+  * **Backend (`llm3_new.py`):** **Python & LangChain**. Handles all AI logic, intelligent routing, and database communication.
   * **Database (Structured Data):** **PostgreSQL (on Supabase)**. Stores the `users`, `chat_history`, `maintenance_requests`, and `user_feedback` tables.
   * **Vector Store (AI Knowledge):** **ChromaDB**. Stored on the local filesystem (`backend/vector_stores/`), with each user's vector store path being hashed.
   * **Scheduler (Cron Job):** **GitHub Actions**. Triggers the daily proactive reminder script.
@@ -180,11 +180,12 @@ python llmpy
 *(Note: This requires a correctly configured `.env` file pointing to the cloud database.)*
 *(Note: In production, this is triggered automatically by the `reminders.yml` GitHub Action.)*
 
-# 🤖 Capstone 项目: llm\_backend.py 模块
+# 🤖 Capstone 项目: backend/
+llm3_new.py 模块
 
 ## 1\. 概述
 
-欢迎阅读 `llm_backend.py` (即 `llm3.py`) 的文档。这是我们Track B（租户聊天机器人） 项目的核心AI后端。
+欢迎阅读 `llm_backend.py` (即 `llm3_new.py`) 的文档。这是我们Track B（租户聊天机器人） 项目的核心AI后端。
 
 此模块**不包含任何UI界面**。它是一个纯粹的“大脑”，负责处理所有AI智能、业务逻辑和数据库通信。
 
