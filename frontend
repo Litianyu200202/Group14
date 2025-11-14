@@ -99,7 +99,7 @@ if "logged_in" not in st.session_state:
 if "user_info" not in st.session_state:
     st.session_state.user_info = {}
 
-# 🔐 Login / Register Page
+# Login / Register Page
 
 def show_login_page():
     # Title and logo
