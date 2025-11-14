@@ -32,7 +32,6 @@ jobs:
       - name: Run Proactive Reminder Script
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           python backend/send_rent_reminders.py
