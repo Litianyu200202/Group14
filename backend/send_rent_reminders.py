@@ -1,111 +1,120 @@
 import os
 import psycopg2
-import requests
-from datetime import datetime, date
+import smtplib
+from email.message import EmailMessage
+from datetime import datetime
 from dotenv import load_dotenv
 
-# 加载 .env
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+EMAIL_SENDER = os.getenv("EMAIL_SENDER")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
-# 你可以使用 Resend 默认邮箱，不需要验证域名
-FROM_EMAIL = "onboarding@resend.dev"  
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
 
 
+# ============= Database =============
 def get_db_conn():
+    if not DATABASE_URL:
+        raise ValueError("❌ Missing DATABASE_URL")
     return psycopg2.connect(DATABASE_URL)
 
 
-def send_email_resend(to_email: str, subject: str, message_content: str):
-    """
-    使用 Resend API 发送邮件
-    """
+# ============= Email Sender =============
+def send_email(to_email, subject, body):
     try:
-        url = "https://api.resend.com/emails"
+        msg = EmailMessage()
+        msg["From"] = EMAIL_SENDER
+        msg["To"] = to_email
+        msg["Subject"] = subject
+        msg.set_content(body)
 
-        headers = {
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json"
-        }
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as smtp:
+            smtp.starttls()
+            smtp.login(EMAIL_SENDER, EMAIL_PASSWORD)
+            smtp.send_message(msg)
 
-        payload = {
-            "from": FROM_EMAIL,
-            "to": to_email,
-            "subject": subject,
-            "html": message_content
-        }
-
-        r = requests.post(url, headers=headers, json=payload)
-
-        if r.status_code in (200, 202):
-            print(f"📨 Email sent to {to_email}")
-            return True
-
-        print(f"❌ Resend Error: {r.status_code} {r.text}")
-        return False
+        print(f"📧 Email sent to {to_email}")
+        return True
 
     except Exception as e:
-        print(f"❌ Exception while sending email: {e}")
+        print(f"❌ Email sending failed to {to_email}: {e}")
         return False
 
 
+# ============= Main Reminder Logic =============
 def run_rent_reminders():
     print("🚀 Running Rent Reminder Script...")
-    print("DATABASE_URL:", DATABASE_URL)
+
+    today = datetime.now().date()
+    today_day = today.day
+    print(f"📅 Today: {today}")
 
     conn = get_db_conn()
     cur = conn.cursor()
 
-    # 用户表就是你的租客表
+    # Fetch tenants
     cur.execute("""
-        SELECT tenant_id, user_name, monthly_rent, rent_due_day
+        SELECT tenant_id, user_name, rent_due_day, lease_end_date
         FROM users
     """)
+    tenants = cur.fetchall()
 
-    users = cur.fetchall()
-    today = date.today()
-    today_day = today.day
+    if not tenants:
+        print("⚠️ No tenants found.")
+        return
 
-    print(f"📌 Today is day {today_day}")
+    # Save successful sends here
+    sent_users = []
 
-    for tenant_id, name, rent, due_day in users:
+    for tenant_id, user_name, rent_due_day, lease_end_date in tenants:
 
-        # 租客没有设置租金信息时跳过
-        if due_day is None:
+        if lease_end_date and today > lease_end_date:
+            print(f"⏳ Skipping {tenant_id}, lease expired.")
             continue
 
-        # 提前 3 天提醒
-        if today_day == (due_day - 3) or today_day == (due_day - 2) or today_day == (due_day - 1):
-            subject = "Rent Payment Reminder"
+        if rent_due_day is None:
+            print(f"⚠️ Skipping {tenant_id}, rent_due_day missing.")
+            continue
 
-            message = f"""
-                <p>Hi {name},</p >
-                <p>This is a friendly reminder that your rent (<b>${rent}</b>) is due on <b>day {due_day}</b> of this month.</p >
-                <p>Please ensure payment is made on time.</p >
-                <p>Thank you,<br>TenantChatbot Team</p >
-            """
+        try:
+            rent_due_day = int(rent_due_day)
+        except Exception:
+            print(f"⚠️ Invalid rent_due_day for {tenant_id}: {rent_due_day}")
+            continue
 
-            send_email_resend(tenant_id, subject, message)
+        reminder_days = [rent_due_day - 5, rent_due_day - 4, rent_due_day - 3, rent_due_day - 2, rent_due_day - 1, rent_due_day, rent_due_day + 1, rent_due_day + 2]
+        reminder_days = [d for d in reminder_days if 1 <= d <= 31]
 
-        # 如果今天就是付款日
-        if today_day == due_day:
-            subject = "Rent Due Today"
+        if today_day not in reminder_days:
+            continue
 
-            message = f"""
-                <p>Hi {name},</p >
-                <p>Your rent (<b>${rent}</b>) is due today.</p >
-                <p>Please make the payment as soon as possible.</p >
-                <p>Thank you,<br>TenantChatbot Team</p >
-            """
+        # Compose email
+        subject = "⏰ Rent Reminder"
+        body = (
+            f"Hello {user_name},\n\n"
+            f"This is a reminder that your rent is due on **day {rent_due_day}** of this month.\n\n"
+            f"If you have already paid, feel free to ignore this message.\n\n"
+            "Best regards,\nTenant Chatbot"
+        )
 
-            send_email_resend(tenant_id, subject, message)
+        if send_email(tenant_id, subject, body):
+            sent_users.append((tenant_id, user_name))
 
     cur.close()
     conn.close()
 
-    print("✅ Rent reminder script finished.")
+    # ==== Summary of sent messages ====
+    print("\n📬 Summary of sent reminders:")
+    if sent_users:
+        for email, name in sent_users:
+            print(f"- {email} ({name})")
+    else:
+        print("⚠️ No reminders sent today.")
+
+    print("✅ Reminder script finished.")
 
 
 if __name__ == "__main__":
