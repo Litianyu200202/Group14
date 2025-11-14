@@ -2,7 +2,7 @@ name: Daily Rent Reminders
 
 on:
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '0 1 * * *'   # 每天 01:00 UTC（SGT 09:00 AM）
   workflow_dispatch:
 
 jobs:
@@ -24,15 +24,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Debug env
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           echo "DATABASE_URL = $DATABASE_URL"
+          echo "EMAIL_SENDER = $EMAIL_SENDER"
 
       - name: Run Proactive Reminder Script
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         run: |
           python backend/send_rent_reminders.py
