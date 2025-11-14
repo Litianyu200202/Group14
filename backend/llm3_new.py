@@ -57,7 +57,7 @@ def save_user_message(tenant_id: str, content: str):
         conn = get_db_conn()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO chat_history (tenant_id, role, content)
+            INSERT INTO chat_history (tenant_id, message_type, message_content)
             VALUES (%s, %s, %s)
         """, (tenant_id, "user", content))
         conn.commit()
@@ -72,7 +72,7 @@ def save_assistant_message(tenant_id: str, content: str):
         conn = get_db_conn()
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO chat_history (tenant_id, role, content)
+            INSERT INTO chat_history (tenant_id, message_type, message_content)
             VALUES (%s, %s, %s)
         """, (tenant_id, "assistant", content))
         conn.commit()
