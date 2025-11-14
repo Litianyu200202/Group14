@@ -304,10 +304,10 @@ async def chat_history(tenant_id: str):
         cur = conn.cursor()
 
         cur.execute("""
-            SELECT role, content, timestamp 
-            FROM chat_history 
-            WHERE tenant_id = %s 
-            ORDER BY timestamp ASC
+            SELECT message_type, message_content, created_at
+            FROM chat_history
+            WHERE tenant_id = %s
+            ORDER BY created_at ASC
         """, (tenant_id,))
 
         rows = cur.fetchall()
@@ -316,10 +316,10 @@ async def chat_history(tenant_id: str):
         conn.close()
 
         history = []
-        for role, content, ts in rows:
+        for message_type, message_content, ts in rows:
             history.append({
-                "role": role,
-                "content": content,
+                "role": "assistant" if message_type == "ai" else "user",
+                "content": message_content,
                 "timestamp": ts.isoformat() if ts else None
             })
 
