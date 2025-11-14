@@ -21,7 +21,8 @@ try:
         user_vector_store_exists,
         llm,
         save_user_message,
-        save_assistant_message
+        save_assistant_message,
+        get_db_conn
     )
     # --- 结束修复 3 ---
     print("✅ Successfully imported all modules from llm3.py")
@@ -297,28 +298,35 @@ async def submit_feedback(
         raise HTTPException(status_code=500, detail=f"Feedback submission failed: {str(e)}")
 
 @app.get("/chat_history/{tenant_id}")
-def get_chat_history(tenant_id: str):
+async def chat_history(tenant_id: str):
     try:
-        sql = """
-            SELECT message_type, message_content, created_at
-            FROM chat_history
-            WHERE tenant_id = %s
-            ORDER BY created_at ASC
-        """
-        rows = db.query_all(sql, (tenant_id,))
+        conn = get_db_conn()
+        cur = conn.cursor()
+
+        cur.execute("""
+            SELECT role, content, timestamp 
+            FROM chat_history 
+            WHERE tenant_id = %s 
+            ORDER BY timestamp ASC
+        """, (tenant_id,))
+
+        rows = cur.fetchall()
+
+        cur.close()
+        conn.close()
 
         history = []
-        for r in rows:
+        for role, content, ts in rows:
             history.append({
-                "role": "user" if r["message_type"] == "user" else "assistant",
-                "content": r["message_content"],
-                "timestamp": r["created_at"].isoformat()
+                "role": role,
+                "content": content,
+                "timestamp": ts.isoformat() if ts else None
             })
 
         return {"history": history}
 
     except Exception as e:
-        print("❌ Error loading chat history:", e)
+        print(f"❌ Error loading chat history: {e}")
         return {"history": []}
 
 # ==================== 🎯 错误处理 ====================
