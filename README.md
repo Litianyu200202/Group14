@@ -1,11 +1,3 @@
-# Group14
-使用方式：
-确保您安装了requirement.txt中的所有的包,请自备带有openai api的.env文件
-在命令行中输入cd /Users/....../Group14（这取决于您的电脑路径）
-uvicorn backend.api:app --reload
-在另一个命令行中输入 streamlit run steeamlit_UI.py即可使用我们的tenant chatbot
-
-
 -----
 
 # 🤖 Capstone Project: AI Tenant Assistant (Track B)
@@ -143,7 +135,6 @@ EMAIL_RECEIVER="agent-real-email@gmail.com"
     source venv/bin/activate
     ```
 2.  Install all libraries from `requirements.txt`:
-    *(Ensure your `requirements.txt` file includes all imports from `llm_final_v2_email_reminders.py`)*
     ```bash
     pip install langchain langchain-openai langchain-community langchain-core psycopg2-binary pydantic python-dotenv chromadb PyPDF2 streamlit
     ```
@@ -155,8 +146,7 @@ EMAIL_RECEIVER="agent-real-email@gmail.com"
 Our system is fully deployed and publicly accessible. Please use the link below to access the live application.
 
 **➡️ Live Application URL:**
-**[INSERT YOUR STREAMLIT CLOUD / HUGGING FACE URL HERE]**
-*(e.g., `https://dss5105group14-tenant-chatbot.hf.space`)*
+**https://dss5105group14-tenant-chatbot.hf.space**
 
 ---
 
@@ -174,7 +164,7 @@ streamlit run app.py
 The proactive reminder script runs automatically in production via GitHub Actions. To manually test this feature locally (the `if __name__ == "__main__":` block), run this in your terminal:
 
 ```bash
-python llmpy
+python llm.py
 ```
 
 *(Note: This requires a correctly configured `.env` file pointing to the cloud database.)*
